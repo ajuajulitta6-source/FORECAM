@@ -1,0 +1,9 @@
+{
+  "name": "ConstructMate CMMS",
+  "description": "A comprehensive Construction Maintenance Management System (CMMS) featuring role-based dashboards, work order management with Kanban boards, asset tracking, inventory control, and AI-powered maintenance analytics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
