@@ -2,14 +2,14 @@
 import React, { useContext, useState } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { UserContext } from '../../context/UserContext';
-import { Asset, UserRole } from '../../types';
-import { Search, Filter, Plus, X, Upload, Save, Edit2, Activity, MapPin, Hash, Tag, Monitor, Trash2, User as UserIcon, Building } from 'lucide-react';
+import { Asset, UserRole, WorkOrderStatus } from '../../types';
+import { Search, Filter, Plus, X, Save, Edit2, MapPin, Tag, Monitor, Trash2, User as UserIcon, Building, Calendar, Clock, FileText, CheckCircle, AlertTriangle, ChevronRight } from 'lucide-react';
 import FileUpload from '../ui/FileUpload';
 import toast from 'react-hot-toast';
 import ConfirmationModal from '../shared/ConfirmationModal';
 
 const AssetRegistry: React.FC = () => {
-  const { assets, addAsset, updateAsset, deleteAsset, users } = useContext(DataContext);
+  const { assets, addAsset, updateAsset, deleteAsset, users, workOrders } = useContext(DataContext);
   const { user } = useContext(UserContext);
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -19,8 +19,10 @@ const AssetRegistry: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
+  // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
@@ -114,6 +116,13 @@ const AssetRegistry: React.FC = () => {
   // Get unique categories from assets for the filter dropdown
   const categories = Array.from(new Set(assets.map(a => a.category))).sort();
 
+  // Helper to get asset history
+  const getAssetHistory = (assetId: string) => {
+    return workOrders
+      .filter(wo => wo.assetId === assetId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -186,7 +195,7 @@ const AssetRegistry: React.FC = () => {
            
            <div>
               <button 
-                onClick={() => { setStatusFilter(''); setCategoryFilter(''); }}
+                onClick={() => { setStatusFilter(''); setCategoryFilter(''); setSearchQuery(''); }}
                 className="px-4 py-2 text-sm text-slate-500 hover:text-slate-800 font-medium hover:bg-slate-200/50 rounded-lg transition-colors"
                 disabled={!statusFilter && !categoryFilter}
               >
@@ -197,6 +206,20 @@ const AssetRegistry: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Prominent Add Asset Card for Admins */}
+        {isAdmin && !searchQuery && !statusFilter && !categoryFilter && (
+            <button 
+                onClick={() => handleOpenModal()}
+                className="flex flex-col items-center justify-center min-h-[350px] bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl hover:border-secondary hover:bg-secondary/5 transition-all group p-6 h-full"
+            >
+                <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Plus className="w-8 h-8 text-secondary" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-700 group-hover:text-secondary">Add New Asset</h3>
+                <p className="text-sm text-slate-500 mt-2 text-center max-w-[200px]">Register machinery, vehicles, or start a new construction project tracking.</p>
+            </button>
+        )}
+
         {filteredAssets.map(asset => (
           <div key={asset.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group flex flex-col h-full">
             <div className="relative h-48 overflow-hidden bg-slate-100">
@@ -213,7 +236,7 @@ const AssetRegistry: React.FC = () => {
                </div>
                {isAdmin && (
                  <button 
-                   onClick={() => handleOpenModal(asset)}
+                   onClick={(e) => { e.stopPropagation(); handleOpenModal(asset); }}
                    className="absolute top-3 left-3 p-2 bg-white/90 backdrop-blur-md rounded-lg text-slate-600 hover:text-primary hover:bg-white shadow-sm transition-all opacity-0 group-hover:opacity-100"
                    title="Edit Asset"
                  >
@@ -266,7 +289,10 @@ const AssetRegistry: React.FC = () => {
               </div>
 
               <div className="mt-6 flex gap-2">
-                <button className="flex-1 bg-slate-50 border border-slate-200 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors">
+                <button 
+                  onClick={() => setViewingAsset(asset)}
+                  className="flex-1 bg-slate-50 border border-slate-200 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-100 transition-colors"
+                >
                   Details
                 </button>
                 <button className="flex-1 bg-primary text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
@@ -277,11 +303,11 @@ const AssetRegistry: React.FC = () => {
           </div>
         ))}
         
-        {filteredAssets.length === 0 && (
+        {filteredAssets.length === 0 && !(!searchQuery && !statusFilter && !categoryFilter && isAdmin) && (
             <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400">
                 <Monitor className="w-12 h-12 mb-3 opacity-50" />
                 <p>No assets found matching your criteria.</p>
-                {(statusFilter || categoryFilter) && (
+                {(statusFilter || categoryFilter || searchQuery) && (
                     <button 
                         onClick={() => { setStatusFilter(''); setCategoryFilter(''); setSearchQuery(''); }}
                         className="mt-2 text-primary hover:text-secondary text-sm font-medium"
@@ -292,6 +318,155 @@ const AssetRegistry: React.FC = () => {
             </div>
         )}
       </div>
+
+      {/* --- Asset Details Modal --- */}
+      {viewingAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row">
+              {/* Left Column: Asset Info */}
+              <div className="w-full md:w-2/5 bg-slate-50 border-r border-slate-200 flex flex-col">
+                 <div className="relative h-64 bg-slate-200">
+                    <img src={viewingAsset.image} alt={viewingAsset.name} className="w-full h-full object-cover" />
+                    <button 
+                       onClick={() => setViewingAsset(null)}
+                       className="absolute top-4 left-4 bg-black/30 hover:bg-black/50 text-white p-1.5 rounded-full transition-colors backdrop-blur-sm md:hidden"
+                    >
+                       <X className="w-5 h-5" />
+                    </button>
+                    <div className="absolute bottom-4 left-4 right-4">
+                       <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase backdrop-blur-md shadow-sm border border-white/20 ${
+                         viewingAsset.status === 'OPERATIONAL' ? 'bg-green-500/90 text-white' :
+                         viewingAsset.status === 'DOWN' ? 'bg-red-500/90 text-white' : 
+                         viewingAsset.status === 'UNDER_CONSTRUCTION' ? 'bg-blue-500/90 text-white' :
+                         'bg-amber-500/90 text-white'
+                       }`}>
+                         {viewingAsset.status.replace('_', ' ')}
+                       </span>
+                    </div>
+                 </div>
+                 
+                 <div className="p-6 flex-1 overflow-y-auto">
+                    <h2 className="text-xl font-bold text-slate-900 mb-1">{viewingAsset.name}</h2>
+                    <p className="text-sm text-slate-500 mb-6">{viewingAsset.category} • {viewingAsset.model}</p>
+                    
+                    <div className="space-y-4">
+                       <div>
+                          <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Location</p>
+                          <div className="flex items-center gap-2 text-slate-700 font-medium">
+                             <MapPin className="w-4 h-4 text-slate-400" /> {viewingAsset.location}
+                          </div>
+                       </div>
+                       
+                       <div className="grid grid-cols-2 gap-4">
+                          <div>
+                             <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Serial Number</p>
+                             <p className="text-sm text-slate-700 font-mono bg-white border border-slate-200 px-2 py-1 rounded inline-block">
+                                {viewingAsset.serialNumber}
+                             </p>
+                          </div>
+                          <div>
+                             <p className="text-xs font-semibold text-slate-400 uppercase mb-1">
+                                {viewingAsset.category === 'Construction Site' ? 'Progress' : 'Health Score'}
+                             </p>
+                             <p className={`text-lg font-bold ${
+                                (viewingAsset.healthScore || 0) > 80 ? 'text-green-600' : 'text-amber-600'
+                             }`}>
+                                {viewingAsset.category === 'Construction Site' ? viewingAsset.projectProgress : viewingAsset.healthScore}%
+                             </p>
+                          </div>
+                       </div>
+
+                       {viewingAsset.clientId && (
+                          <div className="pt-4 border-t border-slate-200">
+                             <p className="text-xs font-semibold text-slate-400 uppercase mb-2">Assigned Client</p>
+                             <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                                <div className="p-2 bg-blue-50 rounded-full">
+                                   <UserIcon className="w-4 h-4 text-blue-600" />
+                                </div>
+                                <div className="overflow-hidden">
+                                   <p className="text-sm font-medium text-slate-900 truncate">
+                                      {users.find(u => u.id === viewingAsset.clientId)?.name || 'Unknown Client'}
+                                   </p>
+                                   <p className="text-xs text-slate-500 truncate">
+                                      {users.find(u => u.id === viewingAsset.clientId)?.email}
+                                   </p>
+                                </div>
+                             </div>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              </div>
+
+              {/* Right Column: Maintenance History */}
+              <div className="w-full md:w-3/5 flex flex-col bg-white">
+                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                       <FileText className="w-5 h-5 text-secondary" /> Maintenance History
+                    </h3>
+                    <button onClick={() => setViewingAsset(null)} className="text-slate-400 hover:text-slate-600 hidden md:block">
+                       <X className="w-6 h-6" />
+                    </button>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
+                    {getAssetHistory(viewingAsset.id).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12">
+                           <Clock className="w-12 h-12 mb-3 opacity-20" />
+                           <p>No work order history found for this asset.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                           {getAssetHistory(viewingAsset.id).map(wo => (
+                              <div key={wo.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-200 transition-colors group">
+                                 <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-2">
+                                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                          wo.status === WorkOrderStatus.COMPLETED ? 'bg-green-100 text-green-700' :
+                                          wo.status === WorkOrderStatus.IN_PROGRESS ? 'bg-blue-100 text-blue-700' :
+                                          'bg-slate-100 text-slate-600'
+                                       }`}>
+                                          {wo.status.replace('_', ' ')}
+                                       </span>
+                                       <span className="text-xs text-slate-400 flex items-center gap-1">
+                                          <Calendar className="w-3 h-3" /> {wo.dueDate}
+                                       </span>
+                                    </div>
+                                    {wo.priority === 'HIGH' || wo.priority === 'CRITICAL' ? (
+                                       <AlertTriangle className="w-4 h-4 text-red-500" />
+                                    ) : wo.status === WorkOrderStatus.COMPLETED ? (
+                                       <CheckCircle className="w-4 h-4 text-green-500" />
+                                    ) : null}
+                                 </div>
+                                 
+                                 <h4 className="font-bold text-slate-800 text-sm mb-1">{wo.title}</h4>
+                                 <p className="text-xs text-slate-600 line-clamp-2 mb-3">{wo.description}</p>
+                                 
+                                 <div className="flex justify-between items-center pt-3 border-t border-slate-50">
+                                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                                       <UserIcon className="w-3 h-3" />
+                                       {users.find(u => u.id === wo.assignedToId)?.name || 'Unassigned'}
+                                    </div>
+                                    <span className="text-xs font-mono text-slate-300">#{wo.id.slice(-4)}</span>
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                    )}
+                 </div>
+                 
+                 <div className="p-4 border-t border-slate-100 bg-white">
+                    <button 
+                       className="w-full py-2 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors text-sm flex items-center justify-center gap-2"
+                       onClick={() => toast("View Full Report functionality would go here")}
+                    >
+                       View Full Asset Report <ChevronRight className="w-4 h-4" />
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* Add/Edit Asset Modal */}
       {isModalOpen && (

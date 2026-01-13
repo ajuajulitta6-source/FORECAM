@@ -1,9 +1,9 @@
 
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { UserContext } from '../../context/UserContext';
-import { Message, UserRole } from '../../types';
-import { Send, Mail, CheckCircle, AlertTriangle, MessageSquare, Plus, Search, User as UserIcon } from 'lucide-react';
+import { Message, UserRole, UserPermission } from '../../types';
+import { Send, Mail, CheckCircle, AlertTriangle, MessageSquare, Plus, Search, User as UserIcon, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MessageCenter: React.FC = () => {
@@ -15,11 +15,25 @@ const MessageCenter: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [composeForm, setComposeForm] = useState({
+    receiverId: '',
     subject: '',
     body: '',
     type: 'GENERAL' as Message['type'],
     relatedEntityId: ''
   });
+
+  const canMessageAnyone = user?.role === UserRole.ADMIN || user?.permissions?.includes(UserPermission.MESSAGE_ANYONE);
+
+  // Set default receiver based on permission when modal opens
+  useEffect(() => {
+    if (isComposeOpen) {
+      if (!canMessageAnyone) {
+        setComposeForm(prev => ({ ...prev, receiverId: 'ADMIN' }));
+      } else {
+        setComposeForm(prev => ({ ...prev, receiverId: '' }));
+      }
+    }
+  }, [isComposeOpen, canMessageAnyone]);
 
   const myMessages = useMemo(() => {
     if (!user) return [];
@@ -34,6 +48,8 @@ const MessageCenter: React.FC = () => {
   }, [messages, user]);
 
   const filteredMessages = myMessages.filter(m => {
+    // Inbox logic: Receiver is Me OR (Me is Admin AND Receiver is 'ADMIN')
+    // Sent logic: Sender is Me
     const isInbox = activeTab === 'INBOX' ? (m.receiverId === user?.id || (user?.role === UserRole.ADMIN && m.receiverId === 'ADMIN')) : m.senderId === user?.id;
     const matchesSearch = m.subject.toLowerCase().includes(searchQuery.toLowerCase()) || m.body.toLowerCase().includes(searchQuery.toLowerCase());
     return isInbox && matchesSearch;
@@ -46,11 +62,19 @@ const MessageCenter: React.FC = () => {
         toast.error("Subject and body are required");
         return;
     }
+    
+    // Ensure receiver ID is set properly based on permissions
+    const finalReceiverId = canMessageAnyone ? composeForm.receiverId : 'ADMIN';
+    
+    if (!finalReceiverId) {
+        toast.error("Please select a recipient");
+        return;
+    }
 
     const newMessage: Message = {
         id: `msg-${Date.now()}`,
         senderId: user.id,
-        receiverId: 'ADMIN', // Default to admin for workers/contractors
+        receiverId: finalReceiverId,
         subject: composeForm.subject,
         body: composeForm.body,
         type: composeForm.type,
@@ -61,10 +85,16 @@ const MessageCenter: React.FC = () => {
 
     addMessage(newMessage);
     setIsComposeOpen(false);
-    setComposeForm({ subject: '', body: '', type: 'GENERAL', relatedEntityId: '' });
+    setComposeForm({ receiverId: '', subject: '', body: '', type: 'GENERAL', relatedEntityId: '' });
   };
 
   const getSenderName = (id: string) => {
+      const u = users.find(user => user.id === id);
+      return u ? u.name : 'Unknown User';
+  };
+
+  const getReceiverName = (id: string) => {
+      if (id === 'ADMIN') return 'Admin Team';
       const u = users.find(user => user.id === id);
       return u ? u.name : 'Unknown User';
   };
@@ -125,7 +155,7 @@ const MessageCenter: React.FC = () => {
                    >
                        <div className="flex justify-between items-start mb-1">
                            <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">
-                               {activeTab === 'INBOX' ? getSenderName(msg.senderId) : `To: ${msg.receiverId === 'ADMIN' ? 'Admin' : getSenderName(msg.receiverId)}`}
+                               {activeTab === 'INBOX' ? getSenderName(msg.senderId) : `To: ${getReceiverName(msg.receiverId)}`}
                            </span>
                            <span className="text-[10px] text-slate-400 whitespace-nowrap">
                                {new Date(msg.createdAt).toLocaleDateString()}
@@ -163,6 +193,35 @@ const MessageCenter: React.FC = () => {
                       <button onClick={() => setIsComposeOpen(false)} className="text-slate-400 hover:text-slate-600"><Plus className="w-5 h-5 rotate-45" /></button>
                   </div>
                   <form onSubmit={handleSend} className="p-6 space-y-4">
+                      
+                      {/* Recipient Selection */}
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">To</label>
+                          {canMessageAnyone ? (
+                            <select
+                                required
+                                value={composeForm.receiverId}
+                                onChange={(e) => setComposeForm({...composeForm, receiverId: e.target.value})}
+                                className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
+                            >
+                                <option value="">Select Recipient...</option>
+                                <option value="ADMIN" className="font-bold">Admin Team (All Admins)</option>
+                                {users.filter(u => u.id !== user?.id).map(u => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.name} ({u.role})
+                                    </option>
+                                ))}
+                            </select>
+                          ) : (
+                             <div className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-500">
+                                <Lock className="w-3.5 h-3.5" />
+                                <span className="text-sm font-medium">Admin Team</span>
+                                <input type="hidden" value="ADMIN" />
+                             </div>
+                          )}
+                          {!canMessageAnyone && <p className="text-[10px] text-slate-400 mt-1">You can only message administrators directly.</p>}
+                      </div>
+
                       <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
                           <div className="flex gap-2">
@@ -219,7 +278,7 @@ const MessageCenter: React.FC = () => {
                       </div>
 
                       <button type="submit" className="w-full py-2 bg-primary text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
-                          <Send className="w-4 h-4" /> Send to Admin
+                          <Send className="w-4 h-4" /> Send Message
                       </button>
                   </form>
               </div>

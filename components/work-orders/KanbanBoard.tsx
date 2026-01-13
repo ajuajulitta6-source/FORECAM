@@ -1,15 +1,16 @@
+
 import React, { useState, useContext } from 'react';
 import { UserContext } from '../../context/UserContext';
 import { DataContext } from '../../context/DataContext';
-import { WorkOrder, WorkOrderStatus, WorkOrderPriority, WorkOrderType } from '../../types';
-import { Plus, Clock, X, Sparkles, Package } from 'lucide-react';
+import { WorkOrder, WorkOrderStatus, WorkOrderPriority, WorkOrderType, UserRole } from '../../types';
+import { Plus, Clock, X, Sparkles, Package, Users, User as UserIcon } from 'lucide-react';
 import { generateMaintenanceChecklist } from '../../services/geminiService';
 import toast from 'react-hot-toast';
 import FileUpload from '../ui/FileUpload';
 
 const KanbanBoard: React.FC = () => {
   const { user } = useContext(UserContext);
-  const { workOrders, addWorkOrder, updateWorkOrder, assets, inventory, consumeInventory } = useContext(DataContext);
+  const { workOrders, addWorkOrder, updateWorkOrder, assets, inventory, consumeInventory, users } = useContext(DataContext);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   
   // Create Modal State
@@ -19,7 +20,9 @@ const KanbanBoard: React.FC = () => {
     description: '',
     assetId: assets[0]?.id || '',
     priority: WorkOrderPriority.MEDIUM,
-    dueDate: ''
+    dueDate: '',
+    assigneeType: 'INDIVIDUAL', // 'INDIVIDUAL' | 'ALL'
+    assignedToId: ''
   });
 
   // Part Usage State
@@ -51,9 +54,7 @@ const KanbanBoard: React.FC = () => {
       return;
     }
 
-    const newOrder: WorkOrder = {
-      id: `wo-${Date.now().toString().slice(-4)}`,
-      title: newOrderForm.title,
+    const baseOrder = {
       description: newOrderForm.description,
       assetId: newOrderForm.assetId,
       requestedById: user?.id || 'u1',
@@ -65,15 +66,45 @@ const KanbanBoard: React.FC = () => {
       partsUsed: []
     };
 
-    addWorkOrder(newOrder);
+    if (newOrderForm.assigneeType === 'ALL') {
+        // Find all Technicians and Contractors
+        const workers = users.filter(u => (u.role === UserRole.TECHNICIAN || u.role === UserRole.CONTRACTOR) && u.status === 'ACTIVE');
+        
+        if (workers.length === 0) {
+            toast.error("No active workers found to assign.");
+            return;
+        }
+
+        workers.forEach((worker, index) => {
+            const newOrder: WorkOrder = {
+                ...baseOrder,
+                id: `wo-${Date.now()}-${index}`,
+                title: `${newOrderForm.title} - ${worker.name}`, // Personalize title
+                assignedToId: worker.id
+            };
+            addWorkOrder(newOrder);
+        });
+        toast.success(`Created ${workers.length} Work Orders for all workers`);
+    } else {
+        const newOrder: WorkOrder = {
+            ...baseOrder,
+            id: `wo-${Date.now().toString().slice(-4)}`,
+            title: newOrderForm.title,
+            assignedToId: newOrderForm.assignedToId || undefined
+        };
+        addWorkOrder(newOrder);
+        toast.success('Work Order created successfully');
+    }
+
     setIsCreateModalOpen(false);
-    toast.success('Work Order created successfully');
     setNewOrderForm({
       title: '',
       description: '',
       assetId: assets[0]?.id || '',
       priority: WorkOrderPriority.MEDIUM,
-      dueDate: ''
+      dueDate: '',
+      assigneeType: 'INDIVIDUAL',
+      assignedToId: ''
     });
   };
 
@@ -96,11 +127,9 @@ const KanbanBoard: React.FC = () => {
     const part = inventory.find(p => p.id === selectedPartId);
     if (!part) return;
 
-    // Call context to consume inventory and check logic
     const success = consumeInventory(selectedPartId, partQuantity);
 
     if (success) {
-      // Update local work order state to show usage on the ticket
       const newPartUsage = {
         inventoryId: part.id,
         name: part.name,
@@ -151,38 +180,48 @@ const KanbanBoard: React.FC = () => {
             </div>
             
             <div className="flex-1 p-2 overflow-y-auto space-y-3 scrollbar-hide">
-              {workOrders.filter(o => o.status === col.id).map(order => (
-                <div 
-                  key={order.id}
-                  onClick={() => setSelectedOrder(order)}
-                  className="group bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-mono text-slate-400">{order.id.toUpperCase()}</span>
-                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                      order.priority === 'HIGH' || order.priority === 'CRITICAL' ? 'bg-red-100 text-red-700' : 
-                      order.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                    }`}>
-                      {order.priority}
-                    </span>
+              {workOrders.filter(o => o.status === col.id).map(order => {
+                const assignedUser = users.find(u => u.id === order.assignedToId);
+                return (
+                  <div 
+                    key={order.id}
+                    onClick={() => setSelectedOrder(order)}
+                    className="group bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs font-mono text-slate-400">{order.id.toUpperCase()}</span>
+                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                        order.priority === 'HIGH' || order.priority === 'CRITICAL' ? 'bg-red-100 text-red-700' : 
+                        order.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                      }`}>
+                        {order.priority}
+                      </span>
+                    </div>
+                    <h4 className="font-medium text-slate-800 mb-1 line-clamp-2">{order.title}</h4>
+                    <div className="flex items-center justify-between mt-2">
+                        <div className="text-xs text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Due {order.dueDate}
+                        </div>
+                        {assignedUser && (
+                            <div className="flex items-center gap-1" title={`Assigned to ${assignedUser.name}`}>
+                                <img src={assignedUser.avatar} className="w-5 h-5 rounded-full border border-white shadow-sm" alt="" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex justify-end pt-2 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity mt-2">
+                      <select 
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleStatusChange(order.id, e.target.value as WorkOrderStatus)}
+                        value={order.status}
+                        className="text-xs border rounded px-1 py-0.5 bg-slate-50"
+                      >
+                        {Object.values(WorkOrderStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
                   </div>
-                  <h4 className="font-medium text-slate-800 mb-1 line-clamp-2">{order.title}</h4>
-                  <div className="text-xs text-slate-500 flex items-center gap-1 mb-3">
-                    <Clock className="w-3 h-3" />
-                    Due {order.dueDate}
-                  </div>
-                  <div className="flex justify-end pt-2 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <select 
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => handleStatusChange(order.id, e.target.value as WorkOrderStatus)}
-                      value={order.status}
-                      className="text-xs border rounded px-1 py-0.5 bg-slate-50"
-                    >
-                      {Object.values(WorkOrderStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -203,10 +242,11 @@ const KanbanBoard: React.FC = () => {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Title <span className="text-red-500">*</span></label>
                 <input required type="text" value={newOrderForm.title} onChange={e => setNewOrderForm({...newOrderForm, title: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg" placeholder="e.g. Hydraulic Pump Maintenance" />
               </div>
+              
               <div className="grid grid-cols-2 gap-4">
                  <div>
                    <label className="block text-sm font-medium text-slate-700 mb-1">Asset</label>
-                   <select value={newOrderForm.assetId} onChange={e => setNewOrderForm({...newOrderForm, assetId: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                   <select value={newOrderForm.assetId} onChange={e => setNewOrderForm({...newOrderForm, assetId: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white">
                      {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
                    </select>
                  </div>
@@ -215,19 +255,73 @@ const KanbanBoard: React.FC = () => {
                    <input required type="date" value={newOrderForm.dueDate} onChange={e => setNewOrderForm({...newOrderForm, dueDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg" />
                  </div>
               </div>
+
               <div>
                  <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                 <select value={newOrderForm.priority} onChange={e => setNewOrderForm({...newOrderForm, priority: e.target.value as WorkOrderPriority})} className="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                 <select value={newOrderForm.priority} onChange={e => setNewOrderForm({...newOrderForm, priority: e.target.value as WorkOrderPriority})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white">
                     {Object.values(WorkOrderPriority).map(p => <option key={p} value={p}>{p}</option>)}
                  </select>
               </div>
+
+              {/* Assignment Section */}
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Assignment</label>
+                  <div className="flex gap-4 mb-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="assigneeType" 
+                        value="INDIVIDUAL" 
+                        checked={newOrderForm.assigneeType === 'INDIVIDUAL'}
+                        onChange={() => setNewOrderForm({...newOrderForm, assigneeType: 'INDIVIDUAL'})}
+                        className="text-secondary focus:ring-secondary"
+                      />
+                      <UserIcon className="w-4 h-4 text-slate-500" />
+                      Specific Person
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="assigneeType" 
+                        value="ALL" 
+                        checked={newOrderForm.assigneeType === 'ALL'}
+                        onChange={() => setNewOrderForm({...newOrderForm, assigneeType: 'ALL'})}
+                        className="text-secondary focus:ring-secondary"
+                      />
+                      <Users className="w-4 h-4 text-slate-500" />
+                      All Workers
+                    </label>
+                  </div>
+                  
+                  {newOrderForm.assigneeType === 'INDIVIDUAL' && (
+                    <select 
+                      value={newOrderForm.assignedToId} 
+                      onChange={(e) => setNewOrderForm({...newOrderForm, assignedToId: e.target.value})} 
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm"
+                    >
+                      <option value="">-- Select Worker --</option>
+                      {users
+                        .filter(u => u.role === UserRole.TECHNICIAN || u.role === UserRole.CONTRACTOR)
+                        .map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  )}
+                  {newOrderForm.assigneeType === 'ALL' && (
+                      <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-100">
+                          This will create a separate Work Order for every active Technician and Contractor in the system.
+                      </p>
+                  )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
                 <textarea rows={3} value={newOrderForm.description} onChange={e => setNewOrderForm({...newOrderForm, description: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg" />
               </div>
+
               <div className="pt-2 flex gap-3">
-                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-medium">Cancel</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg font-medium">Create Order</button>
+                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50">Cancel</button>
+                <button type="submit" className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg font-medium hover:bg-amber-600 transition-colors">Create Order</button>
               </div>
             </form>
           </div>
@@ -256,6 +350,19 @@ const KanbanBoard: React.FC = () => {
                 <div>
                    <label className="text-xs font-semibold text-slate-500 uppercase">Priority</label>
                    <div className="mt-1 font-medium">{selectedOrder.priority}</div>
+                </div>
+                <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase">Assigned To</label>
+                   <div className="mt-1 font-medium flex items-center gap-2">
+                       {selectedOrder.assignedToId ? (
+                           <>
+                             <UserIcon className="w-4 h-4 text-slate-400" />
+                             {users.find(u => u.id === selectedOrder.assignedToId)?.name || 'Unknown User'}
+                           </>
+                       ) : (
+                           <span className="text-slate-400 italic">Unassigned</span>
+                       )}
+                   </div>
                 </div>
               </div>
               <div>
@@ -327,7 +434,7 @@ const KanbanBoard: React.FC = () => {
               <FileUpload onFileSelect={handleFileUpload} label="Attachments" />
             </div>
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-xl">
-               <button onClick={() => setSelectedOrder(null)} className="px-4 py-2 text-slate-600">Close</button>
+               <button onClick={() => setSelectedOrder(null)} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium">Close</button>
             </div>
           </div>
         </div>

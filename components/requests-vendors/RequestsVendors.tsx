@@ -61,6 +61,11 @@ const RequestsVendors: React.FC = () => {
 
   const canManageVendors = user?.role === UserRole.ADMIN || user?.role === UserRole.TECHNICIAN;
 
+  const handleTabChange = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    setSearchQuery(''); // Clear search when switching tabs
+  };
+
   // --- Handlers for Vendors/Contractors ---
 
   const handleVendorSubmit = (e: React.FormEvent) => {
@@ -242,6 +247,17 @@ const RequestsVendors: React.FC = () => {
 
   // --- Render Helpers ---
 
+  const getPlaceholderText = () => {
+    switch (activeTab) {
+      case 'REQUESTS': return "Search requests by title or location...";
+      case 'SOURCING': return "Search broadcast history...";
+      case 'SERVICE_CALLS': return "Search service calls...";
+      case 'VENDORS': return "Search vendors by name, category, or contact...";
+      case 'CONTRACTORS': return "Search contractors by name, category, or contact...";
+      default: return "Search...";
+    }
+  };
+
   const filteredRequests = requests.filter(r => 
       r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.location?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -249,8 +265,11 @@ const RequestsVendors: React.FC = () => {
 
   const filteredVendors = vendors.filter(v => {
       const typeMatch = activeTab === 'CONTRACTORS' ? v.type === 'CONTRACTOR' : v.type === 'SUPPLIER';
-      const searchMatch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          v.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const q = searchQuery.toLowerCase();
+      const searchMatch = v.name.toLowerCase().includes(q) ||
+                          v.category.toLowerCase().includes(q) ||
+                          v.contactName.toLowerCase().includes(q) ||
+                          v.email.toLowerCase().includes(q);
       return typeMatch && searchMatch;
   });
 
@@ -264,31 +283,31 @@ const RequestsVendors: React.FC = () => {
          <h1 className="text-2xl font-bold text-slate-900">Requests & Sourcing</h1>
          <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto max-w-full">
             <button 
-                onClick={() => setActiveTab('REQUESTS')}
+                onClick={() => handleTabChange('REQUESTS')}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'REQUESTS' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
                 Work Requests
             </button>
             <button 
-                onClick={() => setActiveTab('SERVICE_CALLS')}
+                onClick={() => handleTabChange('SERVICE_CALLS')}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'SERVICE_CALLS' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
                 Service Calls
             </button>
             <button 
-                onClick={() => setActiveTab('SOURCING')}
+                onClick={() => handleTabChange('SOURCING')}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'SOURCING' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
                 Material Sourcing
             </button>
             <button 
-                onClick={() => setActiveTab('VENDORS')}
+                onClick={() => handleTabChange('VENDORS')}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'VENDORS' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
                 Vendors
             </button>
             <button 
-                onClick={() => setActiveTab('CONTRACTORS')}
+                onClick={() => handleTabChange('CONTRACTORS')}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'CONTRACTORS' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
                 Contractors
@@ -302,10 +321,10 @@ const RequestsVendors: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="text" 
-              placeholder={activeTab === 'REQUESTS' ? "Search requests..." : activeTab === 'SOURCING' ? "Search broadcast history..." : "Search..."} 
+              placeholder={getPlaceholderText()}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-secondary/50 focus:border-secondary outline-none"
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-secondary/50 focus:border-secondary outline-none transition-all"
             />
          </div>
          <button 
@@ -523,7 +542,12 @@ const RequestsVendors: React.FC = () => {
                     </div>
                 </div>
             ))}
-             {filteredVendors.length === 0 && <div className="col-span-full text-center py-12 text-slate-400">No {activeTab === 'CONTRACTORS' ? 'contractors' : 'vendors'} found.</div>}
+             {filteredVendors.length === 0 && (
+                <div className="col-span-full text-center py-12 text-slate-400">
+                    <p className="mb-2">No results found for "{searchQuery}"</p>
+                    <p className="text-xs">Try searching by name, category, contact person or email.</p>
+                </div>
+             )}
          </div>
       )}
 
@@ -600,6 +624,8 @@ const RequestsVendors: React.FC = () => {
         </div>
       )}
 
+      {/* ... Other Modals ... */}
+      
       {/* --- Material Sourcing Modal --- */}
       {isSourcingModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">

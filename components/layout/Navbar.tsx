@@ -1,7 +1,9 @@
+
 import React, { useContext, useState } from 'react';
 import { Menu, Bell, Search, LogOut, CheckSquare } from 'lucide-react';
 import { UserContext } from '../../context/UserContext';
 import UserTaskLogModal from '../shared/UserTaskLogModal';
+import ProfileModal from '../profile/ProfileModal';
 
 interface NavbarProps {
   sidebarOpen: boolean;
@@ -11,6 +13,7 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user, logout } = useContext(UserContext);
   const [showMyTasks, setShowMyTasks] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
@@ -46,7 +49,10 @@ const Navbar: React.FC<NavbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
             <div className="h-8 w-px bg-slate-200 mx-2"></div>
 
             <div className="flex items-center gap-3">
-               <div className="text-right hidden sm:block">
+               <div 
+                 className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity"
+                 onClick={() => setShowProfile(true)}
+               >
                  <div className="text-sm font-medium text-slate-900">{user?.name}</div>
                  <div className="text-xs text-slate-500">{user?.role}</div>
                </div>
@@ -56,7 +62,7 @@ const Navbar: React.FC<NavbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     src={user?.avatar} 
                     alt={user?.name} 
                     className="w-8 h-8 rounded-full ring-2 ring-slate-100 object-cover"
-                    onClick={() => setShowMyTasks(true)}
+                    onClick={() => setShowProfile(true)}
                   />
                </div>
                
@@ -76,6 +82,12 @@ const Navbar: React.FC<NavbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
         <UserTaskLogModal 
           user={user} 
           onClose={() => setShowMyTasks(false)} 
+        />
+      )}
+
+      {showProfile && (
+        <ProfileModal 
+          onClose={() => setShowProfile(false)}
         />
       )}
     </header>

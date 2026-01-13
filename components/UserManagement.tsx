@@ -27,6 +27,9 @@ const DEFAULT_PERMISSIONS: Record<UserRole, UserPermission[]> = {
   [UserRole.CONTRACTOR]: [
     UserPermission.MANAGE_WORK_ORDERS,
     UserPermission.SEND_MESSAGES
+  ],
+  [UserRole.VENDOR]: [
+    UserPermission.SEND_MESSAGES
   ]
 };
 
@@ -36,7 +39,8 @@ const PERMISSION_LABELS: Record<UserPermission, string> = {
   [UserPermission.MANAGE_WORK_ORDERS]: 'Manage Work Orders',
   [UserPermission.MANAGE_ASSETS]: 'Manage Assets Registry',
   [UserPermission.MANAGE_INVENTORY]: 'Manage Inventory',
-  [UserPermission.SEND_MESSAGES]: 'Send & Receive Messages'
+  [UserPermission.SEND_MESSAGES]: 'Send & Receive Messages',
+  [UserPermission.MESSAGE_ANYONE]: 'Message Any User',
 };
 
 const UserManagement: React.FC = () => {
@@ -374,7 +378,7 @@ const UserManagement: React.FC = () => {
                   Role Assignment
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
-                  {[UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CLIENT, UserRole.CONTRACTOR].map((role) => (
+                  {[UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CLIENT, UserRole.CONTRACTOR, UserRole.VENDOR].map((role) => (
                     <button
                       key={role}
                       type="button"

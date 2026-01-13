@@ -15,9 +15,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   const location = useLocation();
 
   const links = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: [UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CLIENT, UserRole.CONTRACTOR] },
+    { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: [UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CLIENT, UserRole.CONTRACTOR, UserRole.VENDOR] },
     { to: '/work-orders', icon: ClipboardList, label: 'Work Orders', roles: [UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CONTRACTOR] },
-    { to: '/messages', icon: MessageSquare, label: 'Messages', roles: [UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CLIENT, UserRole.CONTRACTOR], permission: UserPermission.SEND_MESSAGES },
+    { to: '/messages', icon: MessageSquare, label: 'Messages', roles: [UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.CLIENT, UserRole.CONTRACTOR, UserRole.VENDOR], permission: UserPermission.SEND_MESSAGES },
     { to: '/preventive-maintenance', icon: Calendar, label: 'Preventive Maint.', roles: [UserRole.ADMIN, UserRole.TECHNICIAN] },
     // Restricted Requests & Vendors to Admin/Tech
     { to: '/requests-vendors', icon: Briefcase, label: 'Requests & Vendors', roles: [UserRole.ADMIN, UserRole.TECHNICIAN] },

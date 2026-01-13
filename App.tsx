@@ -21,6 +21,7 @@ import { UserContext } from './context/UserContext';
 import { DataProvider } from './context/DataContext';
 import { User } from './types';
 import { MOCK_USERS } from './constants';
+import { supabase } from './lib/supabaseClient';
 
 const App: React.FC = () => {
   // Simulating Auth State
@@ -34,9 +35,33 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const login = (email: string) => {
-    // Simple mock login
-    const foundUser = MOCK_USERS.find(u => u.email === email) || MOCK_USERS[0];
+  const login = async (email: string) => {
+    let foundUser: User | null = null;
+
+    // 1. Try fetching from Supabase
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .single();
+        
+        if (data && !error) {
+          foundUser = data as User;
+        } else {
+          console.warn("User not found in Supabase, checking mocks...");
+        }
+      } catch (err) {
+        console.error("Supabase login error:", err);
+      }
+    }
+
+    // 2. Fallback to Mock Data if no backend user found
+    if (!foundUser) {
+       foundUser = MOCK_USERS.find(u => u.email === email) || MOCK_USERS[0];
+    }
+
     setUser(foundUser);
     localStorage.setItem('cmms_user', JSON.stringify(foundUser));
   };
@@ -46,8 +71,16 @@ const App: React.FC = () => {
     localStorage.removeItem('cmms_user');
   };
 
+  const updateProfile = (updates: Partial<User>) => {
+    if (user) {
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+      localStorage.setItem('cmms_user', JSON.stringify(updatedUser));
+    }
+  };
+
   return (
-    <UserContext.Provider value={{ user, login, logout }}>
+    <UserContext.Provider value={{ user, login, logout, updateProfile }}>
       <DataProvider>
         <HashRouter>
           <Toaster position="top-right" />

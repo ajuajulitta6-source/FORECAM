@@ -1,8 +1,9 @@
 
+// ... (imports remain the same)
 import React, { useContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../context/UserContext';
-import { Lock, ArrowRight, X, Mail, Phone, MapPin, Shield, FileText } from 'lucide-react';
+import { Lock, ArrowRight, X, Mail, Phone, MapPin, Shield, FileText, Loader2 } from 'lucide-react';
 import { MOCK_USERS } from '../constants';
 import toast from 'react-hot-toast';
 
@@ -16,11 +17,19 @@ const Login: React.FC = () => {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [email, setEmail] = useState('admin@cmms.com');
   const [password, setPassword] = useState('password');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(email);
-    navigate('/');
+    setIsLoading(true);
+    try {
+      await login(email);
+      navigate('/');
+    } catch (error) {
+      toast.error("Login failed. Please check your connection.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSignUp = () => {
@@ -161,20 +170,23 @@ const Login: React.FC = () => {
                         </div>
                         <button
                             type="submit"
-                            className="w-full py-3 bg-[#7B3F00] text-white rounded-xl font-bold text-lg hover:bg-[#603000] transition-colors shadow-lg flex items-center justify-center gap-2"
+                            disabled={isLoading}
+                            className="w-full py-3 bg-[#7B3F00] text-white rounded-xl font-bold text-lg hover:bg-[#603000] transition-colors shadow-lg flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                         >
-                            Sign In <ArrowRight className="w-5 h-5" />
+                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-5 h-5" /></>}
                         </button>
                     </form>
 
                     <div className="mt-6 pt-6 border-t border-slate-100">
                         <p className="text-xs font-semibold text-slate-500 uppercase text-center mb-3">Demo Accounts</p>
                         <div className="grid grid-cols-2 gap-2">
-                            {MOCK_USERS.slice(0, 4).map(u => (
+                            {MOCK_USERS.slice(0, 5).map(u => (
                                 <button
                                     key={u.id}
+                                    type="button"
                                     onClick={() => setEmail(u.email)}
                                     className="py-2 px-3 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 transition-colors truncate"
+                                    title={u.email}
                                 >
                                     {u.role}
                                 </button>

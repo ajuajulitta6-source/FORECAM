@@ -1,8 +1,9 @@
 
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { createContext, useState, ReactNode, useEffect } from 'react';
 import { User, WorkOrder, ActivityLogEntry, Asset, InventoryItem, Vendor, WorkRequest, DocFile, SystemCategory, MaterialRequest, ServiceBroadcast, Message } from '../types';
 import { MOCK_USERS, MOCK_WORK_ORDERS, MOCK_ACTIVITY_LOGS, MOCK_ASSETS, MOCK_INVENTORY, MOCK_VENDORS, MOCK_REQUESTS, MOCK_DOCUMENTS, MOCK_CATEGORIES, MOCK_MESSAGES } from '../constants';
 import toast from 'react-hot-toast';
+import { supabase } from '../lib/supabaseClient';
 
 interface DataContextType {
   users: User[];
@@ -17,11 +18,12 @@ interface DataContextType {
   materialRequests: MaterialRequest[];
   serviceBroadcasts: ServiceBroadcast[];
   messages: Message[];
-  addUser: (user: User) => void;
-  updateUser: (user: User) => void;
-  deleteUser: (id: string) => void;
-  addWorkOrder: (wo: WorkOrder) => void;
-  updateWorkOrder: (wo: WorkOrder) => void;
+  isLoading: boolean;
+  addUser: (user: User) => Promise<void>;
+  updateUser: (user: User) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
+  addWorkOrder: (wo: WorkOrder) => Promise<void>;
+  updateWorkOrder: (wo: WorkOrder) => Promise<void>;
   addActivityLog: (log: ActivityLogEntry) => void;
   addInventoryItem: (item: InventoryItem) => void;
   updateInventoryItem: (item: InventoryItem) => void;
@@ -63,6 +65,9 @@ const sendBrowserNotification = (title: string, body: string) => {
 };
 
 export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Data State
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(MOCK_WORK_ORDERS);
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(MOCK_ACTIVITY_LOGS);
@@ -76,36 +81,165 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
   const [serviceBroadcasts, setServiceBroadcasts] = useState<ServiceBroadcast[]>([]);
   const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
 
-  const addUser = (user: User) => setUsers(prev => [...prev, user]);
+  // Initial Fetch & Realtime Subscriptions
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!supabase) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        // Fetch Users
+        const { data: usersData } = await supabase.from('users').select('*');
+        if (usersData && usersData.length > 0) setUsers(usersData);
+
+        // Fetch Work Orders
+        const { data: woData } = await supabase.from('work_orders').select('*');
+        if (woData && woData.length > 0) setWorkOrders(woData);
+        
+        // Fetch Assets
+        const { data: assetsData } = await supabase.from('assets').select('*');
+        if (assetsData && assetsData.length > 0) setAssets(assetsData);
+
+        // Fetch Inventory
+        const { data: invData } = await supabase.from('inventory').select('*');
+        if (invData && invData.length > 0) setInventory(invData);
+
+      } catch (error) {
+        console.error("Error connecting to Supabase, falling back to mocks", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+
+    // Enable Realtime Subscriptions if supabase client exists
+    if (supabase) {
+      // Channel for Work Orders
+      const workOrderChannel = supabase.channel('public:work_orders')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setWorkOrders(prev => [payload.new as WorkOrder, ...prev]);
+            toast("New Work Order Created", { icon: '🆕' });
+          } else if (payload.eventType === 'UPDATE') {
+            setWorkOrders(prev => prev.map(w => w.id === payload.new.id ? payload.new as WorkOrder : w));
+          } else if (payload.eventType === 'DELETE') {
+            setWorkOrders(prev => prev.filter(w => w.id !== payload.old.id));
+          }
+        })
+        .subscribe();
+
+      // Channel for Inventory
+      const inventoryChannel = supabase.channel('public:inventory')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setInventory(prev => [...prev, payload.new as InventoryItem]);
+          } else if (payload.eventType === 'UPDATE') {
+             setInventory(prev => prev.map(i => i.id === payload.new.id ? payload.new as InventoryItem : i));
+          } else if (payload.eventType === 'DELETE') {
+             setInventory(prev => prev.filter(i => i.id !== payload.old.id));
+          }
+        })
+        .subscribe();
+
+      // Channel for Assets
+      const assetsChannel = supabase.channel('public:assets')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'assets' }, (payload) => {
+           if (payload.eventType === 'INSERT') {
+             setAssets(prev => [...prev, payload.new as Asset]);
+           } else if (payload.eventType === 'UPDATE') {
+             setAssets(prev => prev.map(a => a.id === payload.new.id ? payload.new as Asset : a));
+           } else if (payload.eventType === 'DELETE') {
+             setAssets(prev => prev.filter(a => a.id !== payload.old.id));
+           }
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(workOrderChannel);
+        supabase.removeChannel(inventoryChannel);
+        supabase.removeChannel(assetsChannel);
+      };
+    }
+  }, []);
+
+  // --- Actions with Supabase Integration ---
+
+  const addUser = async (user: User) => {
+    setUsers(prev => [...prev, user]);
+    if (supabase) {
+      const { error } = await supabase.from('users').insert([user]);
+      if (error) {
+        toast.error("Failed to save user to backend");
+        console.error(error);
+      }
+    }
+  };
   
-  const updateUser = (updatedUser: User) => {
+  const updateUser = async (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    if (supabase) {
+      const { error } = await supabase.from('users').update(updatedUser).eq('id', updatedUser.id);
+      if (error) toast.error("Failed to update user in backend");
+    }
   };
 
-  const deleteUser = (id: string) => {
+  const deleteUser = async (id: string) => {
     setUsers(prev => prev.filter(u => u.id !== id));
+    if (supabase) {
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (error) toast.error("Failed to delete user from backend");
+    }
   };
 
-  const addWorkOrder = (wo: WorkOrder) => setWorkOrders(prev => [wo, ...prev]);
+  const addWorkOrder = async (wo: WorkOrder) => {
+    // We let the realtime subscription update the state for inserts to avoid duplicates if possible, 
+    // but for instant feedback we can optimistically update. 
+    // However, since we have optimistic update + realtime, we might get a blip. 
+    // Best practice with realtime is often to just wait or handle deduplication.
+    // For this prototype, we'll optimistically update and let React key reconciliation handle it or simple state filter.
+    
+    // Check if ID exists to prevent dupes from optimistic + realtime race
+    if (!workOrders.find(w => w.id === wo.id)) {
+        setWorkOrders(prev => [wo, ...prev]);
+    }
+    
+    if (supabase) {
+      const { error } = await supabase.from('work_orders').insert([wo]);
+      if (error) {
+        console.error(error);
+        toast.error("Failed to sync Work Order to backend");
+      }
+    }
+  };
 
-  const updateWorkOrder = (updatedWo: WorkOrder) => {
+  const updateWorkOrder = async (updatedWo: WorkOrder) => {
     setWorkOrders(prev => prev.map(w => w.id === updatedWo.id ? updatedWo : w));
+    if (supabase) {
+      const { error } = await supabase.from('work_orders').update(updatedWo).eq('id', updatedWo.id);
+      if (error) toast.error("Failed to sync update");
+    }
   };
 
   const addActivityLog = (log: ActivityLogEntry) => setActivityLogs(prev => [log, ...prev]);
 
   const addInventoryItem = (item: InventoryItem) => {
     setInventory(prev => [...prev, item]);
+    if (supabase) supabase.from('inventory').insert([item]);
     toast.success(`${item.name} added to inventory`);
   };
 
   const updateInventoryItem = (updatedItem: InventoryItem) => {
     setInventory(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+    if (supabase) supabase.from('inventory').update(updatedItem).eq('id', updatedItem.id);
     toast.success(`Inventory updated: ${updatedItem.name}`);
   };
 
   const deleteInventoryItem = (id: string) => {
     setInventory(prev => prev.filter(i => i.id !== id));
+    if (supabase) supabase.from('inventory').delete().eq('id', id);
     toast.success("Inventory item deleted");
   };
 
@@ -129,6 +263,15 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     });
 
     if (success && itemReference) {
+      if (supabase) {
+        supabase.from('inventory')
+          .update({ quantity: itemReference.quantity })
+          .eq('id', inventoryId)
+          .then(({ error }) => {
+             if (error) console.error("Inventory sync error", error);
+          });
+      }
+
       if (itemReference.quantity <= itemReference.minQuantity) {
         const isCritical = itemReference.quantity === 0;
         const msg = isCritical 
@@ -153,11 +296,6 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
           target: `${itemReference.name} (Qty: ${itemReference.quantity} / Min: ${itemReference.minQuantity}) - Admin Notified`,
           timestamp: new Date().toISOString()
         });
-
-        sendBrowserNotification(
-          isCritical ? "CRITICAL STOCK ALERT" : "Low Stock Warning",
-          msg
-        );
       }
     } else {
       toast.error("Insufficient stock available.");
@@ -168,32 +306,19 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
   const addAsset = (asset: Asset) => {
     setAssets(prev => [asset, ...prev]);
-    addActivityLog({
-      id: `log-${Date.now()}`,
-      userId: 'sys',
-      action: 'Registered New Asset',
-      type: 'CREATE',
-      target: asset.name,
-      timestamp: new Date().toISOString()
-    });
+    if (supabase) supabase.from('assets').insert([asset]);
     toast.success(`${asset.name} registered successfully`);
   };
 
   const updateAsset = (updatedAsset: Asset) => {
     setAssets(prev => prev.map(a => a.id === updatedAsset.id ? updatedAsset : a));
-    addActivityLog({
-      id: `log-${Date.now()}`,
-      userId: 'sys',
-      action: 'Updated Asset Details',
-      type: 'UPDATE',
-      target: updatedAsset.name,
-      timestamp: new Date().toISOString()
-    });
+    if (supabase) supabase.from('assets').update(updatedAsset).eq('id', updatedAsset.id);
     toast.success(`${updatedAsset.name} updated successfully`);
   };
 
   const deleteAsset = (id: string) => {
     setAssets(prev => prev.filter(a => a.id !== id));
+    if (supabase) supabase.from('assets').delete().eq('id', id);
     toast.success("Asset deleted successfully");
   };
 
@@ -260,6 +385,7 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
       materialRequests,
       serviceBroadcasts,
       messages,
+      isLoading,
       addUser,
       updateUser,
       deleteUser,

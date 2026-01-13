@@ -14,7 +14,8 @@ export const MOCK_USERS: User[] = [
       UserPermission.MANAGE_WORK_ORDERS,
       UserPermission.MANAGE_ASSETS,
       UserPermission.MANAGE_INVENTORY,
-      UserPermission.SEND_MESSAGES
+      UserPermission.SEND_MESSAGES,
+      UserPermission.MESSAGE_ANYONE
     ],
     status: 'ACTIVE'
   },
@@ -52,6 +53,17 @@ export const MOCK_USERS: User[] = [
     avatar: 'https://picsum.photos/id/1025/200/200',
     permissions: [
       UserPermission.MANAGE_WORK_ORDERS,
+      UserPermission.SEND_MESSAGES
+    ],
+    status: 'ACTIVE'
+  },
+  {
+    id: 'u5',
+    name: 'Sue Supplier',
+    email: 'supplier@cmms.com',
+    role: UserRole.VENDOR,
+    avatar: 'https://picsum.photos/id/1024/200/200',
+    permissions: [
       UserPermission.SEND_MESSAGES
     ],
     status: 'ACTIVE'

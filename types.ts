@@ -4,6 +4,7 @@ export enum UserRole {
   TECHNICIAN = 'TECHNICIAN',
   CLIENT = 'CLIENT',
   CONTRACTOR = 'CONTRACTOR',
+  VENDOR = 'VENDOR', // Supplier
 }
 
 export enum UserPermission {
@@ -13,6 +14,7 @@ export enum UserPermission {
   MANAGE_ASSETS = 'MANAGE_ASSETS',
   MANAGE_INVENTORY = 'MANAGE_INVENTORY',
   SEND_MESSAGES = 'SEND_MESSAGES',
+  MESSAGE_ANYONE = 'MESSAGE_ANYONE',
 }
 
 export enum WorkOrderStatus {

@@ -1,6 +1,6 @@
 
 import React, { useState, useContext } from 'react';
-import { User, UserRole, UserPermission, WorkOrderPriority, WorkOrderStatus } from '../../types';
+import { User, UserRole, UserPermission, WorkOrderPriority, WorkOrderStatus, WorkOrderType } from '../../types';
 import { UserContext } from '../../context/UserContext';
 import { DataContext } from '../../context/DataContext';
 import { Plus, Search, Trash2, Edit2, Shield, Mail, User as UserIcon, X, Check, Lock, Key, Settings, ClipboardList, ChevronDown, Calendar, AlertTriangle, Send, RefreshCw, History } from 'lucide-react';
@@ -15,7 +15,8 @@ const DEFAULT_PERMISSIONS: Record<UserRole, UserPermission[]> = {
     UserPermission.MANAGE_WORK_ORDERS,
     UserPermission.MANAGE_ASSETS,
     UserPermission.MANAGE_INVENTORY,
-    UserPermission.SEND_MESSAGES
+    UserPermission.SEND_MESSAGES,
+    UserPermission.MESSAGE_ANYONE
   ],
   [UserRole.TECHNICIAN]: [
     UserPermission.MANAGE_WORK_ORDERS,
@@ -30,6 +31,9 @@ const DEFAULT_PERMISSIONS: Record<UserRole, UserPermission[]> = {
   [UserRole.CONTRACTOR]: [
     UserPermission.MANAGE_WORK_ORDERS,
     UserPermission.SEND_MESSAGES
+  ],
+  [UserRole.VENDOR]: [
+    UserPermission.SEND_MESSAGES
   ]
 };
 
@@ -39,7 +43,8 @@ const PERMISSION_LABELS: Record<UserPermission, string> = {
   [UserPermission.MANAGE_WORK_ORDERS]: 'Manage Work Orders',
   [UserPermission.MANAGE_ASSETS]: 'Manage Assets Registry',
   [UserPermission.MANAGE_INVENTORY]: 'Manage Inventory',
-  [UserPermission.SEND_MESSAGES]: 'Send & Receive Messages'
+  [UserPermission.SEND_MESSAGES]: 'Send & Receive Messages',
+  [UserPermission.MESSAGE_ANYONE]: 'Message Any User (Direct)',
 };
 
 interface UserManagementProps {
@@ -296,6 +301,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ embedded = false }) => 
       requestedById: currentUser?.id || 'admin',
       status: WorkOrderStatus.PENDING,
       priority: taskFormData.priority,
+      type: WorkOrderType.REACTIVE,
       dueDate: taskFormData.dueDate,
       createdAt: new Date().toISOString().split('T')[0]
     };
@@ -480,6 +486,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ embedded = false }) => 
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
                       user.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-700 border-purple-200' :
                       user.role === UserRole.TECHNICIAN ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                      user.role === UserRole.VENDOR ? 'bg-orange-50 text-orange-700 border-orange-200' :
                       'bg-green-50 text-green-700 border-green-200'
                     }`}>
                       {user.role === UserRole.ADMIN && <Shield className="w-3 h-3 mr-1" />}
@@ -606,6 +613,32 @@ const UserManagement: React.FC<UserManagementProps> = ({ embedded = false }) => 
                       ))}
                    </div>
                </div>
+
+                <div className="space-y-4">
+                 <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <Key className="w-3 h-3" />
+                  Granular Permissions
+                </h4>
+                <div className="space-y-2 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  {Object.values(UserPermission).map((permission) => (
+                    <label key={permission} className="flex items-center space-x-3 cursor-pointer group">
+                      <div className="relative flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={userFormData.permissions.includes(permission)}
+                          onChange={() => togglePermission(permission)}
+                          className="peer sr-only"
+                        />
+                        <div className="w-5 h-5 bg-white border-2 border-slate-300 rounded peer-checked:bg-primary peer-checked:border-primary transition-colors"></div>
+                        <Check className="w-3 h-3 text-white absolute top-1 left-1 opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                      </div>
+                      <span className={`text-sm ${userFormData.permissions.includes(permission) ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
+                        {PERMISSION_LABELS[permission]}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
 
                <div className="pt-4 flex gap-3 border-t border-slate-100">
                   <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
