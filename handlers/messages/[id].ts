@@ -1,10 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import type { Response } from 'express';
-import { withAuth, AuthenticatedRequest } from '../lib/auth';
-
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { supabaseAdmin as supabase } from '../lib/supabase';
 
 const handler = async (req: AuthenticatedRequest, res: Response) => {
     const { id } = (req as any).params;
