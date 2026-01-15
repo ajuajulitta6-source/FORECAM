@@ -1,6 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Helper to get env vars with validation
 const getEnvVar = (key: string) => {
@@ -32,9 +30,10 @@ export const createAdminClient = () => {
 
 // Deprecated singleton - kept for temporary compat, but should be replaced
 // Use lazy initialization for singleton to avoid top-level crashes
-let adminInstance: ReturnType<typeof createClient> | null = null;
+let adminInstance: SupabaseClient | null = null;
 
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createClient>, {
+// Cast the proxy to SupabaseClient<any, "public", any> to be compatible with typical usage
+export const supabaseAdmin = new Proxy({} as SupabaseClient<any, "public", any>, {
     get: (_target, prop) => {
         if (!adminInstance) {
             adminInstance = createAdminClient();
