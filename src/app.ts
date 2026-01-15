@@ -135,9 +135,10 @@ app.get('/api/debug-env', (req, res) => {
 });
 
 // 404 Handler - Ensure JSON response for API routes
-app.use('/api/*', (req, res) => {
+app.use('/api/:path*', (req, res) => {
     res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
 });
+
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
