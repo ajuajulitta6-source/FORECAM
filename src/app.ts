@@ -123,16 +123,9 @@ app.get('/api/integrations/status', adapt(integrationStatusHandler));
 app.post('/api/integrations/quickbooks/auth-url', adapt(qbAuthUrlHandler));
 app.get('/api/integrations/quickbooks/callback', adapt(qbCallbackHandler));
 // Debug Environment
-app.get('/api/debug-env', (req, res) => {
-    res.json({
-        status: 'ok',
-        env: {
-            SUPABASE_URL_SET: !!process.env.SUPABASE_URL,
-            SUPABASE_SERVICE_ROLE_KEY_SET: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-            SUPABASE_ANON_KEY_SET: !!process.env.SUPABASE_ANON_KEY
-        }
-    });
-});
+// Debug Environment - Removed for production
+// app.get('/api/debug-env', (req, res) => { ... });
+
 
 // 404 Handler - Ensure JSON response for API routes
 app.use('/api/:path*', (req, res) => {
