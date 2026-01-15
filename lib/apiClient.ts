@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3005/api');
+const API_URL = (import.meta as any).env.VITE_API_URL || ((import.meta as any).env.PROD ? '/api' : 'http://localhost:3005/api');
 
 interface ApiOptions extends RequestInit {
     requiresAuth?: boolean;

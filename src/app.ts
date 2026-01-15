@@ -4,7 +4,30 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 // Load env vars
-dotenv.config({ path: '.env.local' });
+// Load env vars - handled in env-loader via server.ts
+// dotenv.config({ path: '.env.local' });
+
+// Static Handlers Imports
+import loginHandler from '../handlers/auth/login';
+import signupHandler from '../handlers/auth/signup';
+import inviteHandler from '../handlers/auth/invite';
+import verifyInvitationHandler from '../handlers/auth/verify-invitation';
+import usersHandler from '../handlers/users/index';
+import userByIdHandler from '../handlers/users/[id]';
+import workOrdersHandler from '../handlers/work-orders/index';
+import workOrderByIdHandler from '../handlers/work-orders/[id]';
+import inventoryHandler from '../handlers/inventory/index';
+import inventoryConsumeHandler from '../handlers/inventory/consume';
+import inventoryByIdHandler from '../handlers/inventory/[id]';
+import assetsHandler from '../handlers/assets/index';
+import assetByIdHandler from '../handlers/assets/[id]';
+import messagesHandler from '../handlers/messages/index';
+import messageByIdHandler from '../handlers/messages/[id]';
+import kpiHandler from '../handlers/reports/kpi';
+import integrationStatusHandler from '../handlers/integrations/status';
+import qbAuthUrlHandler from '../handlers/integrations/quickbooks/auth-url';
+import qbCallbackHandler from '../handlers/integrations/quickbooks/callback';
+import qbSyncInvoiceHandler from '../handlers/integrations/quickbooks/sync-invoice';
 
 const app = express();
 
@@ -21,14 +44,8 @@ if (frontendUrl) {
 
 app.use(express.json());
 
-// Request Adapter for Vercel -> Express
-// We don't need the complex adapter from server.ts anymore because we are
-// running a real Express app in the function, not adapting individual handlers manually.
-// BUT, the existing handlers in `handlers/` export a function `(req, res) => ...`.
-// They expect `req` to have `query` etc.
-// The easiest way to reuse them is to keep wrapping them.
-
-const adapt = (handlerModule: any) => async (req: express.Request, res: express.Response) => {
+// Request Adapter
+const adapt = (handler: any) => async (req: express.Request, res: express.Response) => {
     // Vercel/Express compat for query
     const combined = { ...req.query, ...req.params };
     Object.defineProperty(req, 'query', {
@@ -37,16 +54,16 @@ const adapt = (handlerModule: any) => async (req: express.Request, res: express.
         writable: true
     });
 
-    const handler = handlerModule.default || handlerModule;
+    const finalHandler = handler.default || handler;
 
-    if (typeof handler !== 'function') {
-        console.error('Handler is not a function', handler);
+    if (typeof finalHandler !== 'function') {
+        console.error('Handler is not a function', finalHandler);
         res.status(500).json({ error: 'Invalid Handler Setup' });
         return;
     }
 
     try {
-        await handler(req, res);
+        await finalHandler(req, res);
     } catch (error: any) {
         console.error('Handler Error:', error);
         if (!res.headersSent) {
@@ -55,99 +72,56 @@ const adapt = (handlerModule: any) => async (req: express.Request, res: express.
     }
 };
 
-// Root Check
+// Routes Registration (Synchronous)
 app.get('/api', (req, res) => {
-    res.send('CMMS Backend API (Monolith) is Running');
+    res.send('CMMS Backend API (Static Monolith) is Running');
 });
 
-// Import Handlers (Lazy loading or static? Static is fine for monolith)
-// using await import inside async IIFE or just updating routes.
-// We need to register routes.
+// Auth
+app.post('/api/auth/login', adapt(loginHandler));
+app.post('/api/auth/signup', adapt(signupHandler));
+app.post('/api/auth/invite', adapt(inviteHandler));
+app.get('/api/auth/verify-invitation', adapt(verifyInvitationHandler));
 
-const registerRoutes = async () => {
-    try {
-        // Auth
-        const loginHandler = await import('../handlers/auth/login');
-        const signupHandler = await import('../handlers/auth/signup');
-        const inviteHandler = await import('../handlers/auth/invite');
-        const verifyInvitationHandler = await import('../handlers/auth/verify-invitation');
+// Users
+app.get('/api/users', adapt(usersHandler));
+app.post('/api/users', adapt(usersHandler));
+app.delete('/api/users/:id', adapt(userByIdHandler));
 
-        app.post('/api/auth/login', adapt(loginHandler));
-        app.post('/api/auth/signup', adapt(signupHandler));
-        app.post('/api/auth/invite', adapt(inviteHandler));
-        app.get('/api/auth/verify-invitation', adapt(verifyInvitationHandler));
+// Work Orders
+app.get('/api/work-orders', adapt(workOrdersHandler));
+app.post('/api/work-orders', adapt(workOrdersHandler));
+app.get('/api/work-orders/:id', adapt(workOrderByIdHandler));
+app.patch('/api/work-orders/:id', adapt(workOrderByIdHandler));
+app.delete('/api/work-orders/:id', adapt(workOrderByIdHandler));
 
-        // Users
-        const usersHandler = await import('../handlers/users/index');
-        const userByIdHandler = await import('../handlers/users/[id]');
+// Inventory
+app.get('/api/inventory', adapt(inventoryHandler));
+app.post('/api/inventory', adapt(inventoryHandler));
+app.post('/api/inventory/consume', adapt(inventoryConsumeHandler));
+app.get('/api/inventory/:id', adapt(inventoryByIdHandler));
+app.patch('/api/inventory/:id', adapt(inventoryByIdHandler));
+app.delete('/api/inventory/:id', adapt(inventoryByIdHandler));
 
-        app.get('/api/users', adapt(usersHandler));
-        app.post('/api/users', adapt(usersHandler));
-        app.delete('/api/users/:id', adapt(userByIdHandler));
+// Assets
+app.get('/api/assets', adapt(assetsHandler));
+app.post('/api/assets', adapt(assetsHandler));
+app.get('/api/assets/:id', adapt(assetByIdHandler));
+app.patch('/api/assets/:id', adapt(assetByIdHandler));
+app.delete('/api/assets/:id', adapt(assetByIdHandler));
 
-        // Work Orders
-        const workOrdersHandler = await import('../handlers/work-orders/index');
-        const workOrderByIdHandler = await import('../handlers/work-orders/[id]');
+// Messages
+app.get('/api/messages', adapt(messagesHandler));
+app.post('/api/messages', adapt(messagesHandler));
+app.patch('/api/messages/:id', adapt(messageByIdHandler));
 
-        app.get('/api/work-orders', adapt(workOrdersHandler));
-        app.post('/api/work-orders', adapt(workOrdersHandler));
-        app.get('/api/work-orders/:id', adapt(workOrderByIdHandler));
-        app.patch('/api/work-orders/:id', adapt(workOrderByIdHandler));
-        app.delete('/api/work-orders/:id', adapt(workOrderByIdHandler));
+// Reports
+app.get('/api/reports/kpi', adapt(kpiHandler));
 
-        // Inventory
-        const inventoryHandler = await import('../handlers/inventory/index');
-        const inventoryConsumeHandler = await import('../handlers/inventory/consume');
-        const inventoryByIdHandler = await import('../handlers/inventory/[id]');
-
-        app.get('/api/inventory', adapt(inventoryHandler));
-        app.post('/api/inventory', adapt(inventoryHandler));
-        app.post('/api/inventory/consume', adapt(inventoryConsumeHandler));
-        app.get('/api/inventory/:id', adapt(inventoryByIdHandler));
-        app.patch('/api/inventory/:id', adapt(inventoryByIdHandler));
-        app.delete('/api/inventory/:id', adapt(inventoryByIdHandler));
-
-        // Assets
-        const assetsHandler = await import('../handlers/assets/index');
-        const assetByIdHandler = await import('../handlers/assets/[id]');
-
-        app.get('/api/assets', adapt(assetsHandler));
-        app.post('/api/assets', adapt(assetsHandler));
-        app.get('/api/assets/:id', adapt(assetByIdHandler));
-        app.patch('/api/assets/:id', adapt(assetByIdHandler));
-        app.delete('/api/assets/:id', adapt(assetByIdHandler));
-
-        // Messages
-        const messagesHandler = await import('../handlers/messages/index');
-        const messageByIdHandler = await import('../handlers/messages/[id]');
-
-        app.get('/api/messages', adapt(messagesHandler));
-        app.post('/api/messages', adapt(messagesHandler));
-        app.patch('/api/messages/:id', adapt(messageByIdHandler));
-
-        // Reports
-        const kpiHandler = await import('../handlers/reports/kpi');
-        app.get('/api/reports/kpi', adapt(kpiHandler));
-
-        // Integrations
-        const integrationStatusHandler = await import('../handlers/integrations/status');
-        const qbAuthUrlHandler = await import('../handlers/integrations/quickbooks/auth-url');
-        const qbCallbackHandler = await import('../handlers/integrations/quickbooks/callback');
-        const qbSyncInvoiceHandler = await import('../handlers/integrations/quickbooks/sync-invoice');
-
-        app.get('/api/integrations/status', adapt(integrationStatusHandler));
-        app.post('/api/integrations/quickbooks/auth-url', adapt(qbAuthUrlHandler));
-        app.get('/api/integrations/quickbooks/callback', adapt(qbCallbackHandler));
-        app.post('/api/integrations/quickbooks/sync-invoice', adapt(qbSyncInvoiceHandler));
-
-        console.log("Routes registered successfully");
-
-    } catch (error) {
-        console.error("Failed to register routes:", error);
-    }
-};
-
-// Initialize routes
-registerRoutes();
+// Integrations
+app.get('/api/integrations/status', adapt(integrationStatusHandler));
+app.post('/api/integrations/quickbooks/auth-url', adapt(qbAuthUrlHandler));
+app.get('/api/integrations/quickbooks/callback', adapt(qbCallbackHandler));
+app.post('/api/integrations/quickbooks/sync-invoice', adapt(qbSyncInvoiceHandler));
 
 export default app;

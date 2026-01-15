@@ -1,4 +1,5 @@
 
+import './env-loader';
 import app from './src/app';
 
 const PORT = 3005;
