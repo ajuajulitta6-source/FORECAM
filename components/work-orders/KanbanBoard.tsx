@@ -3,16 +3,17 @@ import React, { useState, useContext } from 'react';
 import { UserContext } from '../../context/UserContext';
 import { DataContext } from '../../context/DataContext';
 import { WorkOrder, WorkOrderStatus, WorkOrderPriority, WorkOrderType, UserRole } from '../../types';
-import { Plus, Clock, X, Sparkles, Package, Users, User as UserIcon } from 'lucide-react';
+import { Plus, Clock, X, Sparkles, Package, Users, User as UserIcon, Paperclip } from 'lucide-react';
 import { generateMaintenanceChecklist } from '../../services/geminiService';
 import toast from 'react-hot-toast';
 import FileUpload from '../ui/FileUpload';
+import { uploadFile } from '../../lib/storage';
 
 const KanbanBoard: React.FC = () => {
   const { user } = useContext(UserContext);
   const { workOrders, addWorkOrder, updateWorkOrder, assets, inventory, consumeInventory, users } = useContext(DataContext);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
-  
+
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newOrderForm, setNewOrderForm] = useState({
@@ -42,8 +43,8 @@ const KanbanBoard: React.FC = () => {
   const handleStatusChange = (orderId: string, newStatus: WorkOrderStatus) => {
     const order = workOrders.find(o => o.id === orderId);
     if (order) {
-       updateWorkOrder({ ...order, status: newStatus });
-       toast.success(`Work Order moved to ${newStatus}`);
+      updateWorkOrder({ ...order, status: newStatus });
+      toast.success(`Work Order moved to ${newStatus}`);
     }
   };
 
@@ -67,33 +68,33 @@ const KanbanBoard: React.FC = () => {
     };
 
     if (newOrderForm.assigneeType === 'ALL') {
-        // Find all Technicians and Contractors
-        const workers = users.filter(u => (u.role === UserRole.TECHNICIAN || u.role === UserRole.CONTRACTOR) && u.status === 'ACTIVE');
-        
-        if (workers.length === 0) {
-            toast.error("No active workers found to assign.");
-            return;
-        }
+      // Find all Technicians and Contractors
+      const workers = users.filter(u => (u.role === UserRole.TECHNICIAN || u.role === UserRole.CONTRACTOR) && u.status === 'ACTIVE');
 
-        workers.forEach((worker, index) => {
-            const newOrder: WorkOrder = {
-                ...baseOrder,
-                id: `wo-${Date.now()}-${index}`,
-                title: `${newOrderForm.title} - ${worker.name}`, // Personalize title
-                assignedToId: worker.id
-            };
-            addWorkOrder(newOrder);
-        });
-        toast.success(`Created ${workers.length} Work Orders for all workers`);
-    } else {
+      if (workers.length === 0) {
+        toast.error("No active workers found to assign.");
+        return;
+      }
+
+      workers.forEach((worker, index) => {
         const newOrder: WorkOrder = {
-            ...baseOrder,
-            id: `wo-${Date.now().toString().slice(-4)}`,
-            title: newOrderForm.title,
-            assignedToId: newOrderForm.assignedToId || undefined
+          ...baseOrder,
+          id: `wo-${Date.now()}-${index}`,
+          title: `${newOrderForm.title} - ${worker.name}`, // Personalize title
+          assignedToId: worker.id
         };
         addWorkOrder(newOrder);
-        toast.success('Work Order created successfully');
+      });
+      toast.success(`Created ${workers.length} Work Orders for all workers`);
+    } else {
+      const newOrder: WorkOrder = {
+        ...baseOrder,
+        id: `wo-${Date.now().toString().slice(-4)}`,
+        title: newOrderForm.title,
+        assignedToId: newOrderForm.assignedToId || undefined
+      };
+      addWorkOrder(newOrder);
+      toast.success('Work Order created successfully');
     }
 
     setIsCreateModalOpen(false);
@@ -112,7 +113,7 @@ const KanbanBoard: React.FC = () => {
     if (!selectedOrder) return;
     setIsAiLoading(true);
     setAiResponse(null);
-    
+
     const asset = assets.find(a => a.id === selectedOrder.assetId);
     const assetName = asset ? asset.name : "Unknown Asset";
 
@@ -136,7 +137,7 @@ const KanbanBoard: React.FC = () => {
         quantity: partQuantity,
         costAtTime: part.unitPrice
       };
-      
+
       const updatedOrder = {
         ...selectedOrder,
         partsUsed: [...(selectedOrder.partsUsed || []), newPartUsage]
@@ -150,15 +151,26 @@ const KanbanBoard: React.FC = () => {
     }
   };
 
-  const handleFileUpload = (file: File) => {
-    toast.success(`Attached ${file.name} to order`);
+  const handleFileUpload = async (file: File) => {
+    if (!selectedOrder) return;
+    const toastId = toast.loading("Uploading attachment...");
+    const url = await uploadFile(file);
+
+    if (url) {
+      const updatedOrder = { ...selectedOrder, image: url };
+      updateWorkOrder(updatedOrder);
+      setSelectedOrder(updatedOrder);
+      toast.success("Attachment uploaded", { id: toastId });
+    } else {
+      toast.error("Upload failed", { id: toastId });
+    }
   };
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Work Orders</h1>
-        <button 
+        <button
           onClick={() => setIsCreateModalOpen(true)}
           className="flex items-center gap-2 bg-secondary text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors shadow-sm font-medium"
         >
@@ -178,39 +190,38 @@ const KanbanBoard: React.FC = () => {
                 </span>
               </div>
             </div>
-            
+
             <div className="flex-1 p-2 overflow-y-auto space-y-3 scrollbar-hide">
               {workOrders.filter(o => o.status === col.id).map(order => {
                 const assignedUser = users.find(u => u.id === order.assignedToId);
                 return (
-                  <div 
+                  <div
                     key={order.id}
                     onClick={() => setSelectedOrder(order)}
                     className="group bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all"
                   >
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-xs font-mono text-slate-400">{order.id.toUpperCase()}</span>
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                        order.priority === 'HIGH' || order.priority === 'CRITICAL' ? 'bg-red-100 text-red-700' : 
+                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${order.priority === 'HIGH' || order.priority === 'CRITICAL' ? 'bg-red-100 text-red-700' :
                         order.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                      }`}>
+                        }`}>
                         {order.priority}
                       </span>
                     </div>
                     <h4 className="font-medium text-slate-800 mb-1 line-clamp-2">{order.title}</h4>
                     <div className="flex items-center justify-between mt-2">
-                        <div className="text-xs text-slate-500 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            Due {order.dueDate}
+                      <div className="text-xs text-slate-500 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Due {order.dueDate}
+                      </div>
+                      {assignedUser && (
+                        <div className="flex items-center gap-1" title={`Assigned to ${assignedUser.name}`}>
+                          <img src={assignedUser.avatar} className="w-5 h-5 rounded-full border border-white shadow-sm" alt="" />
                         </div>
-                        {assignedUser && (
-                            <div className="flex items-center gap-1" title={`Assigned to ${assignedUser.name}`}>
-                                <img src={assignedUser.avatar} className="w-5 h-5 rounded-full border border-white shadow-sm" alt="" />
-                            </div>
-                        )}
+                      )}
                     </div>
                     <div className="flex justify-end pt-2 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity mt-2">
-                      <select 
+                      <select
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => handleStatusChange(order.id, e.target.value as WorkOrderStatus)}
                         value={order.status}
@@ -236,87 +247,87 @@ const KanbanBoard: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <form onSubmit={handleCreateSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Title <span className="text-red-500">*</span></label>
-                <input required type="text" value={newOrderForm.title} onChange={e => setNewOrderForm({...newOrderForm, title: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg" placeholder="e.g. Hydraulic Pump Maintenance" />
+                <input required type="text" value={newOrderForm.title} onChange={e => setNewOrderForm({ ...newOrderForm, title: e.target.value })} className="w-full px-4 py-2 border border-slate-300 rounded-lg" placeholder="e.g. Hydraulic Pump Maintenance" />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Asset</label>
-                   <select value={newOrderForm.assetId} onChange={e => setNewOrderForm({...newOrderForm, assetId: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white">
-                     {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
-                   </select>
-                 </div>
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
-                   <input required type="date" value={newOrderForm.dueDate} onChange={e => setNewOrderForm({...newOrderForm, dueDate: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg" />
-                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Asset</label>
+                  <select value={newOrderForm.assetId} onChange={e => setNewOrderForm({ ...newOrderForm, assetId: e.target.value })} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white">
+                    {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
+                  <input required type="date" value={newOrderForm.dueDate} onChange={e => setNewOrderForm({ ...newOrderForm, dueDate: e.target.value })} className="w-full px-4 py-2 border border-slate-300 rounded-lg" />
+                </div>
               </div>
 
               <div>
-                 <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                 <select value={newOrderForm.priority} onChange={e => setNewOrderForm({...newOrderForm, priority: e.target.value as WorkOrderPriority})} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white">
-                    {Object.values(WorkOrderPriority).map(p => <option key={p} value={p}>{p}</option>)}
-                 </select>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+                <select value={newOrderForm.priority} onChange={e => setNewOrderForm({ ...newOrderForm, priority: e.target.value as WorkOrderPriority })} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white">
+                  {Object.values(WorkOrderPriority).map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
               </div>
 
               {/* Assignment Section */}
               <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Assignment</label>
-                  <div className="flex gap-4 mb-3">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="assigneeType" 
-                        value="INDIVIDUAL" 
-                        checked={newOrderForm.assigneeType === 'INDIVIDUAL'}
-                        onChange={() => setNewOrderForm({...newOrderForm, assigneeType: 'INDIVIDUAL'})}
-                        className="text-secondary focus:ring-secondary"
-                      />
-                      <UserIcon className="w-4 h-4 text-slate-500" />
-                      Specific Person
-                    </label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="assigneeType" 
-                        value="ALL" 
-                        checked={newOrderForm.assigneeType === 'ALL'}
-                        onChange={() => setNewOrderForm({...newOrderForm, assigneeType: 'ALL'})}
-                        className="text-secondary focus:ring-secondary"
-                      />
-                      <Users className="w-4 h-4 text-slate-500" />
-                      All Workers
-                    </label>
-                  </div>
-                  
-                  {newOrderForm.assigneeType === 'INDIVIDUAL' && (
-                    <select 
-                      value={newOrderForm.assignedToId} 
-                      onChange={(e) => setNewOrderForm({...newOrderForm, assignedToId: e.target.value})} 
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm"
-                    >
-                      <option value="">-- Select Worker --</option>
-                      {users
-                        .filter(u => u.role === UserRole.TECHNICIAN || u.role === UserRole.CONTRACTOR)
-                        .map(u => (
+                <label className="block text-sm font-medium text-slate-700 mb-2">Assignment</label>
+                <div className="flex gap-4 mb-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="assigneeType"
+                      value="INDIVIDUAL"
+                      checked={newOrderForm.assigneeType === 'INDIVIDUAL'}
+                      onChange={() => setNewOrderForm({ ...newOrderForm, assigneeType: 'INDIVIDUAL' })}
+                      className="text-secondary focus:ring-secondary"
+                    />
+                    <UserIcon className="w-4 h-4 text-slate-500" />
+                    Specific Person
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="assigneeType"
+                      value="ALL"
+                      checked={newOrderForm.assigneeType === 'ALL'}
+                      onChange={() => setNewOrderForm({ ...newOrderForm, assigneeType: 'ALL' })}
+                      className="text-secondary focus:ring-secondary"
+                    />
+                    <Users className="w-4 h-4 text-slate-500" />
+                    All Workers
+                  </label>
+                </div>
+
+                {newOrderForm.assigneeType === 'INDIVIDUAL' && (
+                  <select
+                    value={newOrderForm.assignedToId}
+                    onChange={(e) => setNewOrderForm({ ...newOrderForm, assignedToId: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm"
+                  >
+                    <option value="">-- Select Worker --</option>
+                    {users
+                      .filter(u => u.role === UserRole.TECHNICIAN || u.role === UserRole.CONTRACTOR)
+                      .map(u => (
                         <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                       ))}
-                    </select>
-                  )}
-                  {newOrderForm.assigneeType === 'ALL' && (
-                      <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-100">
-                          This will create a separate Work Order for every active Technician and Contractor in the system.
-                      </p>
-                  )}
+                  </select>
+                )}
+                {newOrderForm.assigneeType === 'ALL' && (
+                  <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-100">
+                    This will create a separate Work Order for every active Technician and Contractor in the system.
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea rows={3} value={newOrderForm.description} onChange={e => setNewOrderForm({...newOrderForm, description: e.target.value})} className="w-full px-4 py-2 border border-slate-300 rounded-lg" />
+                <textarea rows={3} value={newOrderForm.description} onChange={e => setNewOrderForm({ ...newOrderForm, description: e.target.value })} className="w-full px-4 py-2 border border-slate-300 rounded-lg" />
               </div>
 
               <div className="pt-2 flex gap-3">
@@ -333,94 +344,94 @@ const KanbanBoard: React.FC = () => {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <div>
-                 <h2 className="text-xl font-bold text-slate-900">{selectedOrder.title}</h2>
-                 <p className="text-sm text-slate-500">ID: {selectedOrder.id}</p>
+                <h2 className="text-xl font-bold text-slate-900">{selectedOrder.title}</h2>
+                <p className="text-sm text-slate-500">ID: {selectedOrder.id}</p>
               </div>
-              <button onClick={() => {setSelectedOrder(null); setAiResponse(null);}} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setSelectedOrder(null); setAiResponse(null); }} className="text-slate-400 hover:text-slate-600">
                 <X className="w-6 h-6" />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase">Asset ID</label>
-                   <div className="mt-1 font-medium">{selectedOrder.assetId}</div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase">Asset ID</label>
+                  <div className="mt-1 font-medium">{selectedOrder.assetId}</div>
                 </div>
                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase">Priority</label>
-                   <div className="mt-1 font-medium">{selectedOrder.priority}</div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase">Priority</label>
+                  <div className="mt-1 font-medium">{selectedOrder.priority}</div>
                 </div>
                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase">Assigned To</label>
-                   <div className="mt-1 font-medium flex items-center gap-2">
-                       {selectedOrder.assignedToId ? (
-                           <>
-                             <UserIcon className="w-4 h-4 text-slate-400" />
-                             {users.find(u => u.id === selectedOrder.assignedToId)?.name || 'Unknown User'}
-                           </>
-                       ) : (
-                           <span className="text-slate-400 italic">Unassigned</span>
-                       )}
-                   </div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase">Assigned To</label>
+                  <div className="mt-1 font-medium flex items-center gap-2">
+                    {selectedOrder.assignedToId ? (
+                      <>
+                        <UserIcon className="w-4 h-4 text-slate-400" />
+                        {users.find(u => u.id === selectedOrder.assignedToId)?.name || 'Unknown User'}
+                      </>
+                    ) : (
+                      <span className="text-slate-400 italic">Unassigned</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase">Description</label>
                 <p className="mt-2 text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100">{selectedOrder.description}</p>
               </div>
-              
+
               {/* Materials & Parts Usage Section */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
-                 <div className="flex items-center gap-2 mb-3">
-                    <Package className="w-4 h-4 text-slate-600" />
-                    <h3 className="font-semibold text-slate-900">Materials & Parts</h3>
-                 </div>
-                 
-                 {/* Usage History */}
-                 {selectedOrder.partsUsed && selectedOrder.partsUsed.length > 0 && (
-                   <div className="mb-4 space-y-2">
-                     {selectedOrder.partsUsed.map((part, idx) => (
-                       <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-slate-200">
-                         <span className="text-slate-700">{part.name}</span>
-                         <div className="flex items-center gap-2">
-                            <span className="font-medium">Qty: {part.quantity}</span>
-                            <span className="text-slate-400 text-xs">${(part.costAtTime * part.quantity).toFixed(2)}</span>
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 )}
+                <div className="flex items-center gap-2 mb-3">
+                  <Package className="w-4 h-4 text-slate-600" />
+                  <h3 className="font-semibold text-slate-900">Materials & Parts</h3>
+                </div>
 
-                 {/* Add Part Form */}
-                 <div className="flex gap-2">
-                    <select 
-                      value={selectedPartId} 
-                      onChange={(e) => setSelectedPartId(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">Select Part...</option>
-                      {inventory.map(item => (
-                        <option key={item.id} value={item.id} disabled={item.quantity === 0}>
-                           {item.name} ({item.quantity} avail)
-                        </option>
-                      ))}
-                    </select>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      value={partQuantity} 
-                      onChange={(e) => setPartQuantity(parseInt(e.target.value))}
-                      className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                    />
-                    <button 
-                      onClick={handleAddPart}
-                      disabled={!selectedPartId}
-                      className="bg-slate-800 text-white px-3 py-2 rounded-lg text-sm hover:bg-slate-900 disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                 </div>
+                {/* Usage History */}
+                {selectedOrder.partsUsed && selectedOrder.partsUsed.length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    {selectedOrder.partsUsed.map((part, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-slate-200">
+                        <span className="text-slate-700">{part.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">Qty: {part.quantity}</span>
+                          <span className="text-slate-400 text-xs">{(part.costAtTime * part.quantity).toFixed(2)} FCFA</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add Part Form */}
+                <div className="flex gap-2">
+                  <select
+                    value={selectedPartId}
+                    onChange={(e) => setSelectedPartId(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                  >
+                    <option value="">Select Part...</option>
+                    {inventory.map(item => (
+                      <option key={item.id} value={item.id} disabled={item.quantity === 0}>
+                        {item.name} ({item.quantity} avail)
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={partQuantity}
+                    onChange={(e) => setPartQuantity(parseInt(e.target.value))}
+                    className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                  <button
+                    onClick={handleAddPart}
+                    disabled={!selectedPartId}
+                    className="bg-slate-800 text-white px-3 py-2 rounded-lg text-sm hover:bg-slate-900 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
 
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-5">
@@ -431,10 +442,58 @@ const KanbanBoard: React.FC = () => {
                 {isAiLoading && <div className="text-sm text-indigo-500 animate-pulse">Consulting Gemini...</div>}
                 {aiResponse && <div className="prose prose-sm prose-indigo max-w-none text-slate-700 bg-white p-4 rounded-lg">{aiResponse}</div>}
               </div>
-              <FileUpload onFileSelect={handleFileUpload} label="Attachments" />
+
+              {/* QuickBooks Sync Section */}
+              {selectedOrder.status === WorkOrderStatus.COMPLETED && (
+                <div className="bg-green-50 border border-green-100 rounded-xl p-5 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-green-900 flex items-center gap-2">QuickBooks Integration</h3>
+                      <p className="text-sm text-green-700 mt-1">Ready to create invoice from this work order.</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const toastId = toast.loading("Syncing to QuickBooks...");
+                        try {
+                          const response = await fetch('/api/integrations/quickbooks/sync-invoice', { // Using relative path for proxy
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ workOrderId: selectedOrder.id })
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            toast.success(`Invoice #${data.invoiceNumber} created!`, { id: toastId });
+                          } else {
+                            throw new Error(data.error);
+                          }
+                        } catch (error: any) {
+                          toast.error(error.message || "Sync failed", { id: toastId });
+                        }
+                      }}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 shadow-sm transition-colors flex items-center gap-2"
+                    >
+                      Sync to QuickBooks
+                    </button>
+                  </div>
+                </div>
+              )}
+              {selectedOrder.image && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-4">
+                  <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                    <Paperclip className="w-4 h-4" /> Attached Evidence
+                  </h3>
+                  <div className="relative group rounded-lg overflow-hidden border border-slate-200 max-w-sm">
+                    <img src={selectedOrder.image} alt="Work Order Attachment" className="w-full h-auto object-cover" />
+                    <a href={selectedOrder.image} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white font-medium">
+                      View Full Size
+                    </a>
+                  </div>
+                </div>
+              )}
+              <FileUpload onFileSelect={handleFileUpload} label="Add Attachment" />
             </div>
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-xl">
-               <button onClick={() => setSelectedOrder(null)} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium">Close</button>
+              <button onClick={() => setSelectedOrder(null)} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium">Close</button>
             </div>
           </div>
         </div>

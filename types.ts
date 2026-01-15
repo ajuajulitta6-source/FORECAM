@@ -149,6 +149,7 @@ export interface ServiceBroadcast {
   notifiedVendorIds: string[]; // List of Contractor IDs
   createdAt: string;
   createdBy: string;
+  image?: string;
 }
 
 export interface InventoryItem {

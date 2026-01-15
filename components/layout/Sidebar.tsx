@@ -29,7 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
 
   const hasAccess = (link: any) => {
     if (!user) return false;
-    
+
     // Special handling for Organization access if needed
     if (link.to === '/organization' && user.role === UserRole.TECHNICIAN) return true;
 
@@ -41,7 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   return (
     <>
       {/* Mobile Backdrop */}
-      <div 
+      <div
         className={`fixed inset-0 z-40 bg-slate-900 bg-opacity-50 transition-opacity lg:hidden ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setIsOpen(false)}
       />
@@ -50,12 +50,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
       <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-primary text-white transition-transform transform lg:static lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between h-16 px-6 bg-slate-950 border-b border-slate-800">
           <div className="flex items-center space-x-3">
-            <img 
-              src="https://i.postimg.cc/9X91N12z/Whats-App-Image-2025-05-31-at-05-59-28-35f9787e.jpg" 
-              alt="Fotabong Logo" 
+            <img
+              src="https://i.postimg.cc/9X91N12z/Whats-App-Image-2025-05-31-at-05-59-28-35f9787e.jpg"
+              alt="Fotabong Logo"
               className="w-8 h-8 rounded bg-white object-contain"
             />
-            <span className="text-sm font-bold tracking-tight leading-tight">Fotabong Royal<br/>Enterprise</span>
+            <span className="text-sm font-bold tracking-tight leading-tight">Fotabong Royal<br />Enterprise</span>
           </div>
           <button onClick={() => setIsOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
             <X className="w-6 h-6" />
@@ -71,43 +71,52 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
                 key={link.to}
                 to={link.to}
                 onClick={() => setIsOpen(false)}
-                className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${
-                  isActive 
-                    ? 'bg-secondary text-primary' 
+                className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${isActive
+                    ? 'bg-secondary text-primary'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
+                  }`}
               >
                 <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-primary' : 'text-slate-400'}`} />
                 {link.label}
               </NavLink>
             );
           })}
-          
+
           <div className="pt-4 mt-4 border-t border-slate-700">
             <div className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
               System
             </div>
             {user?.role === UserRole.ADMIN && (
-              <NavLink 
-                to="/settings"
-                onClick={() => setIsOpen(false)} 
-                className={({isActive}) => `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${
-                  isActive ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <Settings className="w-5 h-5 mr-3 text-slate-400" />
-                Settings
-              </NavLink>
+              <>
+                <NavLink
+                  to="/integrations"
+                  onClick={() => setIsOpen(false)}
+                  className={({ isActive }) => `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${isActive ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                >
+                  <Activity className="w-5 h-5 mr-3 text-slate-400" />
+                  Integrations
+                </NavLink>
+
+                <NavLink
+                  to="/settings"
+                  onClick={() => setIsOpen(false)}
+                  className={({ isActive }) => `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${isActive ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                >
+                  <Settings className="w-5 h-5 mr-3 text-slate-400" />
+                  Settings
+                </NavLink>
+              </>
             )}
-            <NavLink 
+            <NavLink
               to="/reports"
               onClick={() => setIsOpen(false)}
-              className={({isActive}) => `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${
-                  isActive ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
+              className={({ isActive }) => `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 ${isActive ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
             >
-               <Activity className="w-5 h-5 mr-3 text-slate-400" />
-               Reports
+              <Activity className="w-5 h-5 mr-3 text-slate-400" />
+              Reports
             </NavLink>
           </div>
         </nav>

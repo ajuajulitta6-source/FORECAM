@@ -4,23 +4,40 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch server.ts",
+    "dev:api": "vercel dev",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^1.35.0",
+    "@hubspot/api-client": "^13.4.0",
+    "@supabase/supabase-js": "^2.90.1",
+    "@types/nodemailer": "^7.0.5",
+    "intuit-oauth": "^4.2.2",
+    "lucide-react": "^0.562.0",
+    "nodemailer": "^7.0.12",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.12.0",
     "recharts": "^3.6.0",
-    "lucide-react": "^0.562.0",
-    "@google/genai": "^1.35.0",
-    "react-hot-toast": "^2.6.0",
-    "@supabase/supabase-js": "^2.90.1"
+    "resend": "^6.7.0",
+    "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
+    "@vercel/node": "^5.5.17",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

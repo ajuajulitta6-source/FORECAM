@@ -1,9 +1,11 @@
 
 import React, { createContext, useState, ReactNode, useEffect } from 'react';
 import { User, WorkOrder, ActivityLogEntry, Asset, InventoryItem, Vendor, WorkRequest, DocFile, SystemCategory, MaterialRequest, ServiceBroadcast, Message } from '../types';
-import { MOCK_USERS, MOCK_WORK_ORDERS, MOCK_ACTIVITY_LOGS, MOCK_ASSETS, MOCK_INVENTORY, MOCK_VENDORS, MOCK_REQUESTS, MOCK_DOCUMENTS, MOCK_CATEGORIES, MOCK_MESSAGES } from '../constants';
+import { MOCK_USERS, MOCK_WORK_ORDERS, MOCK_ACTIVITY_LOGS, MOCK_VENDORS, MOCK_REQUESTS, MOCK_DOCUMENTS, MOCK_CATEGORIES, MOCK_MESSAGES } from '../constants';
 import toast from 'react-hot-toast';
+import { api } from '../lib/apiClient';
 import { supabase } from '../lib/supabaseClient';
+import { transformWorkOrderForApi, transformWorkOrderFromApi, transformMessageFromApi } from '../lib/apiTransformers';
 
 interface DataContextType {
   users: User[];
@@ -55,7 +57,7 @@ const sendBrowserNotification = (title: string, body: string) => {
     try {
       new Notification(title, {
         body: body,
-        icon: '/vite.svg', 
+        icon: '/vite.svg',
         vibrate: [200, 100, 200]
       } as NotificationOptions & { vibrate?: number[] });
     } catch (e) {
@@ -64,50 +66,43 @@ const sendBrowserNotification = (title: string, body: string) => {
   }
 };
 
-export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
+export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Data State
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(MOCK_WORK_ORDERS);
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(MOCK_ACTIVITY_LOGS);
-  const [assets, setAssets] = useState<Asset[]>(MOCK_ASSETS);
-  const [inventory, setInventory] = useState<InventoryItem[]>(MOCK_INVENTORY);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>(MOCK_VENDORS);
   const [requests, setRequests] = useState<WorkRequest[]>(MOCK_REQUESTS);
   const [documents, setDocuments] = useState<DocFile[]>(MOCK_DOCUMENTS);
   const [categories, setCategories] = useState<SystemCategory[]>(MOCK_CATEGORIES);
   const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>([]);
   const [serviceBroadcasts, setServiceBroadcasts] = useState<ServiceBroadcast[]>([]);
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   // Initial Fetch & Realtime Subscriptions
   useEffect(() => {
     const fetchData = async () => {
-      if (!supabase) {
-        setIsLoading(false);
-        return;
-      }
-
       try {
-        // Fetch Users
-        const { data: usersData } = await supabase.from('users').select('*');
-        if (usersData && usersData.length > 0) setUsers(usersData);
+        // Fetch from API
+        const [usersData, woData, assetsData, invData, msgData] = await Promise.all([
+          api.get<User[]>('/users').catch(e => { console.log('API Users Error', e); return null; }),
+          api.get<any[]>('/work-orders').catch(e => { console.log('API WorkOrders Error', e); return null; }),
+          api.get<Asset[]>('/assets').catch(e => { console.log('API Assets Error', e); return null; }),
+          api.get<InventoryItem[]>('/inventory').catch(e => { console.log('API Inventory Error', e); return null; }),
+          api.get<any[]>('/messages').catch(e => { console.log('API Messages Error', e); return null; })
+        ]);
 
-        // Fetch Work Orders
-        const { data: woData } = await supabase.from('work_orders').select('*');
-        if (woData && woData.length > 0) setWorkOrders(woData);
-        
-        // Fetch Assets
-        const { data: assetsData } = await supabase.from('assets').select('*');
-        if (assetsData && assetsData.length > 0) setAssets(assetsData);
-
-        // Fetch Inventory
-        const { data: invData } = await supabase.from('inventory').select('*');
-        if (invData && invData.length > 0) setInventory(invData);
-
+        if (usersData) setUsers(usersData);
+        if (woData) setWorkOrders(woData.map(transformWorkOrderFromApi));
+        if (assetsData) setAssets(assetsData);
+        if (invData) setInventory(invData);
+        if (msgData) setMessages(msgData.map(transformMessageFromApi));
       } catch (error) {
-        console.error("Error connecting to Supabase, falling back to mocks", error);
+        console.error("Error fetching data:", error);
       } finally {
         setIsLoading(false);
       }
@@ -137,9 +132,31 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
           if (payload.eventType === 'INSERT') {
             setInventory(prev => [...prev, payload.new as InventoryItem]);
           } else if (payload.eventType === 'UPDATE') {
-             setInventory(prev => prev.map(i => i.id === payload.new.id ? payload.new as InventoryItem : i));
+            setInventory(prev => prev.map(i => i.id === payload.new.id ? payload.new as InventoryItem : i));
           } else if (payload.eventType === 'DELETE') {
-             setInventory(prev => prev.filter(i => i.id !== payload.old.id));
+            setInventory(prev => prev.filter(i => i.id !== payload.old.id));
+          }
+        })
+        .subscribe();
+
+      // Channel for Messages
+      const messagesChannel = supabase.channel('public:messages')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newMsg = transformMessageFromApi(payload.new as any);
+            // Deduplicate if optimistic update already added it (by id check usually, but optimistic IDs are temporary)
+            // Ideally we replace the optimistic one. But here we just append if not exists.
+            // Simplified:
+            setMessages(prev => {
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [newMsg, ...prev];
+            });
+            toast("New Message Received", { icon: '📩' });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedMsg = transformMessageFromApi(payload.new as any);
+            setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m));
+          } else if (payload.eventType === 'DELETE') {
+            setMessages(prev => prev.filter(m => m.id !== payload.old.id));
           }
         })
         .subscribe();
@@ -147,13 +164,13 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
       // Channel for Assets
       const assetsChannel = supabase.channel('public:assets')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'assets' }, (payload) => {
-           if (payload.eventType === 'INSERT') {
-             setAssets(prev => [...prev, payload.new as Asset]);
-           } else if (payload.eventType === 'UPDATE') {
-             setAssets(prev => prev.map(a => a.id === payload.new.id ? payload.new as Asset : a));
-           } else if (payload.eventType === 'DELETE') {
-             setAssets(prev => prev.filter(a => a.id !== payload.old.id));
-           }
+          if (payload.eventType === 'INSERT') {
+            setAssets(prev => [...prev, payload.new as Asset]);
+          } else if (payload.eventType === 'UPDATE') {
+            setAssets(prev => prev.map(a => a.id === payload.new.id ? payload.new as Asset : a));
+          } else if (payload.eventType === 'DELETE') {
+            setAssets(prev => prev.filter(a => a.id !== payload.old.id));
+          }
         })
         .subscribe();
 
@@ -161,6 +178,7 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         supabase.removeChannel(workOrderChannel);
         supabase.removeChannel(inventoryChannel);
         supabase.removeChannel(assetsChannel);
+        supabase.removeChannel(messagesChannel);
       };
     }
   }, []);
@@ -169,6 +187,9 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
   const addUser = async (user: User) => {
     setUsers(prev => [...prev, user]);
+    // Skip backend sync for optimistic invites
+    if (user.id.startsWith('invite-')) return;
+
     if (supabase) {
       const { error } = await supabase.from('users').insert([user]);
       if (error) {
@@ -177,7 +198,7 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
       }
     }
   };
-  
+
   const updateUser = async (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     if (supabase) {
@@ -187,139 +208,152 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
   };
 
   const deleteUser = async (id: string) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
-    if (supabase) {
-      const { error } = await supabase.from('users').delete().eq('id', id);
-      if (error) toast.error("Failed to delete user from backend");
+    setUsers(prev => prev.filter(u => u.id !== id)); // Optimistic
+    try {
+      await api.delete(`/users/${id}`);
+      toast.success("User deleted successfully");
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+      toast.error("Failed to delete user from backend");
+      // Optionally fetch users again to revert
     }
   };
 
   const addWorkOrder = async (wo: WorkOrder) => {
-    // We let the realtime subscription update the state for inserts to avoid duplicates if possible, 
-    // but for instant feedback we can optimistically update. 
-    // However, since we have optimistic update + realtime, we might get a blip. 
-    // Best practice with realtime is often to just wait or handle deduplication.
-    // For this prototype, we'll optimistically update and let React key reconciliation handle it or simple state filter.
-    
-    // Check if ID exists to prevent dupes from optimistic + realtime race
+    // Optimistic Update
     if (!workOrders.find(w => w.id === wo.id)) {
-        setWorkOrders(prev => [wo, ...prev]);
+      setWorkOrders(prev => [wo, ...prev]);
     }
-    
-    if (supabase) {
-      const { error } = await supabase.from('work_orders').insert([wo]);
-      if (error) {
-        console.error(error);
-        toast.error("Failed to sync Work Order to backend");
-      }
+
+    try {
+      // Transform and send to API
+      const payload = transformWorkOrderForApi(wo);
+      const response = await api.post('/work-orders', payload);
+
+      // Transform response back to frontend format
+      const createdWo = transformWorkOrderFromApi(response);
+
+      // Update with server response (e.g. real ID, timestamps)
+      setWorkOrders(prev => prev.map(w => w.id === wo.id ? createdWo : w));
+      toast.success('Work Order created successfully');
+    } catch (error: any) {
+      console.error('Work Order sync error:', error);
+      toast.error(error.message || "Failed to sync Work Order to backend");
+      // Revert optimistic update
+      setWorkOrders(prev => prev.filter(w => w.id !== wo.id));
     }
   };
 
   const updateWorkOrder = async (updatedWo: WorkOrder) => {
+    const previousState = workOrders;
     setWorkOrders(prev => prev.map(w => w.id === updatedWo.id ? updatedWo : w));
-    if (supabase) {
-      const { error } = await supabase.from('work_orders').update(updatedWo).eq('id', updatedWo.id);
-      if (error) toast.error("Failed to sync update");
+
+    try {
+      const payload = transformWorkOrderForApi(updatedWo);
+      const response = await api.patch(`/work-orders/${updatedWo.id}`, payload);
+      const transformed = transformWorkOrderFromApi(response);
+      setWorkOrders(prev => prev.map(w => w.id === transformed.id ? transformed : w));
+      toast.success('Work Order updated successfully');
+    } catch (error: any) {
+      console.error('Work Order update error:', error);
+      toast.error(error.message || "Failed to sync update");
+      setWorkOrders(previousState); // Revert to previous state
     }
   };
 
   const addActivityLog = (log: ActivityLogEntry) => setActivityLogs(prev => [log, ...prev]);
 
-  const addInventoryItem = (item: InventoryItem) => {
-    setInventory(prev => [...prev, item]);
-    if (supabase) supabase.from('inventory').insert([item]);
-    toast.success(`${item.name} added to inventory`);
-  };
-
-  const updateInventoryItem = (updatedItem: InventoryItem) => {
-    setInventory(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
-    if (supabase) supabase.from('inventory').update(updatedItem).eq('id', updatedItem.id);
-    toast.success(`Inventory updated: ${updatedItem.name}`);
-  };
-
-  const deleteInventoryItem = (id: string) => {
-    setInventory(prev => prev.filter(i => i.id !== id));
-    if (supabase) supabase.from('inventory').delete().eq('id', id);
-    toast.success("Inventory item deleted");
-  };
-
-  const consumeInventory = (inventoryId: string, quantity: number): boolean => {
-    let success = false;
-    let itemReference: InventoryItem | undefined;
-
-    setInventory(prev => {
-      return prev.map(item => {
-        if (item.id === inventoryId) {
-          if (item.quantity >= quantity) {
-            success = true;
-            itemReference = { ...item, quantity: item.quantity - quantity };
-            return itemReference;
-          } else {
-            return item;
-          }
-        }
-        return item;
-      });
-    });
-
-    if (success && itemReference) {
-      if (supabase) {
-        supabase.from('inventory')
-          .update({ quantity: itemReference.quantity })
-          .eq('id', inventoryId)
-          .then(({ error }) => {
-             if (error) console.error("Inventory sync error", error);
-          });
-      }
-
-      if (itemReference.quantity <= itemReference.minQuantity) {
-        const isCritical = itemReference.quantity === 0;
-        const msg = isCritical 
-          ? `CRITICAL: ${itemReference.name} is OUT OF STOCK!` 
-          : `LOW STOCK: ${itemReference.name} fell below minimum (${itemReference.quantity} left)`;
-
-        toast(msg, {
-          icon: isCritical ? '🚨' : '⚠️',
-          duration: 5000,
-          style: {
-            border: '1px solid #f59e0b',
-            padding: '16px',
-            color: '#713200',
-          },
-        });
-
-        addActivityLog({
-          id: `sys-alert-${Date.now()}`,
-          userId: 'sys',
-          action: isCritical ? 'Stock Depleted' : 'Low Stock Warning',
-          type: 'SYSTEM',
-          target: `${itemReference.name} (Qty: ${itemReference.quantity} / Min: ${itemReference.minQuantity}) - Admin Notified`,
-          timestamp: new Date().toISOString()
-        });
-      }
-    } else {
-      toast.error("Insufficient stock available.");
+  const addInventoryItem = async (item: InventoryItem) => {
+    setInventory(prev => [...prev, item]); // Optimistic
+    try {
+      await api.post('/inventory', item);
+      toast.success(`${item.name} added to inventory`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to sync inventory");
+      setInventory(prev => prev.filter(i => i.id !== item.id)); // Revert
     }
-
-    return success;
   };
 
-  const addAsset = (asset: Asset) => {
-    setAssets(prev => [asset, ...prev]);
-    if (supabase) supabase.from('assets').insert([asset]);
-    toast.success(`${asset.name} registered successfully`);
+  const updateInventoryItem = async (updatedItem: InventoryItem) => {
+    setInventory(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+    try {
+      await api.patch(`/inventory/${updatedItem.id}`, updatedItem);
+      toast.success(`Inventory updated: ${updatedItem.name}`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to update inventory");
+      // Optionally fetch refresh or revert here
+    }
   };
 
-  const updateAsset = (updatedAsset: Asset) => {
+  const deleteInventoryItem = async (id: string) => {
+    setInventory(prev => prev.filter(i => i.id !== id));
+    try {
+      await api.delete(`/inventory/${id}`);
+      toast.success("Inventory item deleted");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to delete inventory item");
+      // Optionally fetch refresh
+    }
+  };
+
+  const consumeInventory = async (inventoryId: string, quantity: number): Promise<boolean> => {
+    try {
+      const response = await api.post('/inventory/consume', { inventoryId, quantity });
+
+      setInventory(prev => prev.map(item =>
+        item.id === inventoryId
+          ? { ...item, quantity: response.item.quantity }
+          : item
+      ));
+
+      if (response.lowStock) {
+        toast.error(`Low stock alert: ${response.item.name}`);
+        sendBrowserNotification("Low Stock Warning", `${response.item.name} is running low.`);
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error("Consume inventory error:", error);
+      toast.error(error.message || "Failed to consume inventory");
+      return false;
+    }
+  };
+
+  const addAsset = async (asset: Asset) => {
+    setAssets(prev => [asset, ...prev]); // Optimistic
+    try {
+      await api.post('/assets', asset);
+      toast.success(`${asset.name} registered successfully`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to register asset");
+      setAssets(prev => prev.filter(a => a.id !== asset.id)); // Revert
+    }
+  };
+
+  const updateAsset = async (updatedAsset: Asset) => {
     setAssets(prev => prev.map(a => a.id === updatedAsset.id ? updatedAsset : a));
-    if (supabase) supabase.from('assets').update(updatedAsset).eq('id', updatedAsset.id);
-    toast.success(`${updatedAsset.name} updated successfully`);
+    try {
+      await api.patch(`/assets/${updatedAsset.id}`, updatedAsset);
+      toast.success(`${updatedAsset.name} updated successfully`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to update asset");
+    }
   };
 
-  const deleteAsset = (id: string) => {
+  const deleteAsset = async (id: string) => {
     setAssets(prev => prev.filter(a => a.id !== id));
-    if (supabase) supabase.from('assets').delete().eq('id', id);
-    toast.success("Asset deleted successfully");
+    try {
+      await api.delete(`/assets/${id}`);
+      toast.success("Asset deleted successfully");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to delete asset");
+    }
   };
 
   const addVendor = (vendor: Vendor) => setVendors(prev => [...prev, vendor]);
@@ -362,13 +396,42 @@ export const DataProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     sendBrowserNotification("Service Help Needed!", `${req.priority} PRIORITY: ${req.title} at ${req.location}`);
   };
 
-  const addMessage = (msg: Message) => {
+  const addMessage = async (msg: Message) => {
+    // Optimistic
     setMessages(prev => [msg, ...prev]);
-    toast.success("Message sent successfully");
+
+    try {
+      const payload = {
+        senderId: msg.senderId,
+        receiverId: msg.receiverId,
+        subject: msg.subject,
+        body: msg.body,
+        type: msg.type,
+        relatedEntityId: msg.relatedEntityId
+      };
+      const response = await api.post('/messages', payload);
+      const savedMsg = transformMessageFromApi(response);
+
+      // Update optimistic msg with real one (id, timestamp)
+      setMessages(prev => prev.map(m => m.id === msg.id ? savedMsg : m));
+      toast.success("Message sent successfully");
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      toast.error("Failed to send message to backend");
+      setMessages(prev => prev.filter(m => m.id !== msg.id));
+    }
   };
 
-  const markMessageRead = (id: string) => {
+  const markMessageRead = async (id: string) => {
+    // Optimistic
     setMessages(prev => prev.map(m => m.id === id ? { ...m, isRead: true } : m));
+
+    try {
+      await api.patch(`/messages/${id}`, { is_read: true });
+    } catch (error) {
+      console.error("Failed to mark message read:", error);
+      // Silent fail or revert? Silent is usually fine for read receipts
+    }
   };
 
   return (

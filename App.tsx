@@ -15,13 +15,16 @@ import Organization from './components/organization/Organization';
 import Reports from './components/reports/Reports';
 import MessageCenter from './components/messages/MessageCenter';
 import Settings from './components/settings/Settings';
+import Integrations from './components/admin/Integrations';
 import Login from './components/Login';
+import Signup from './components/Signup';
 import ProtectedRoute from './components/shared/ProtectedRoute';
 import { UserContext } from './context/UserContext';
 import { DataProvider } from './context/DataContext';
 import { User } from './types';
-import { MOCK_USERS } from './constants';
+
 import { supabase } from './lib/supabaseClient';
+import { api } from './lib/apiClient';
 
 const App: React.FC = () => {
   // Simulating Auth State
@@ -35,35 +38,22 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const login = async (email: string) => {
-    let foundUser: User | null = null;
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const { user, session } = response;
 
-    // 1. Try fetching from Supabase
-    if (supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email)
-          .single();
-        
-        if (data && !error) {
-          foundUser = data as User;
-        } else {
-          console.warn("User not found in Supabase, checking mocks...");
-        }
-      } catch (err) {
-        console.error("Supabase login error:", err);
-      }
+      // Store session
+      localStorage.setItem('supabase_access_token', session.access_token);
+      localStorage.setItem('supabase_refresh_token', session.refresh_token);
+      localStorage.setItem('cmms_user', JSON.stringify(user));
+
+      setUser(user);
+      return;
+    } catch (error) {
+      console.error("API login failed:", error);
+      throw error;
     }
-
-    // 2. Fallback to Mock Data if no backend user found
-    if (!foundUser) {
-       foundUser = MOCK_USERS.find(u => u.email === email) || MOCK_USERS[0];
-    }
-
-    setUser(foundUser);
-    localStorage.setItem('cmms_user', JSON.stringify(foundUser));
   };
 
   const logout = () => {
@@ -80,13 +70,14 @@ const App: React.FC = () => {
   };
 
   return (
-    <UserContext.Provider value={{ user, login, logout, updateProfile }}>
+    <UserContext.Provider value={{ user, login, logout, updateProfile, setUser }}>
       <DataProvider>
         <HashRouter>
           <Toaster position="top-right" />
           <Routes>
             <Route path="/login" element={<Login />} />
-            
+            <Route path="/signup" element={<Signup />} />
+
             <Route path="/" element={
               <ProtectedRoute>
                 <Layout>
@@ -94,7 +85,7 @@ const App: React.FC = () => {
                 </Layout>
               </ProtectedRoute>
             } />
-            
+
             <Route path="/work-orders" element={
               <ProtectedRoute>
                 <Layout>
@@ -113,9 +104,9 @@ const App: React.FC = () => {
 
             <Route path="/requests-vendors" element={
               <ProtectedRoute allowedRoles={[UserRole.ADMIN, UserRole.TECHNICIAN]}>
-                 <Layout>
-                    <RequestsVendors />
-                 </Layout>
+                <Layout>
+                  <RequestsVendors />
+                </Layout>
               </ProtectedRoute>
             } />
 
@@ -162,7 +153,7 @@ const App: React.FC = () => {
               </ProtectedRoute>
             } />
 
-             {/* Users Route */}
+            {/* Users Route */}
             <Route path="/users" element={
               <ProtectedRoute allowedRoles={[UserRole.ADMIN]} requiredPermission={UserPermission.MANAGE_TEAM}>
                 <Layout>
@@ -176,6 +167,15 @@ const App: React.FC = () => {
               <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
                 <Layout>
                   <Settings />
+                </Layout>
+              </ProtectedRoute>
+            } />
+
+            {/* Integrations Route */}
+            <Route path="/integrations" element={
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+                <Layout>
+                  <Integrations />
                 </Layout>
               </ProtectedRoute>
             } />
