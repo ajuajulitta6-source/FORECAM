@@ -120,7 +120,11 @@ app.get('/api/reports/kpi', adapt(kpiHandler));
 
 // Integrations
 app.get('/api/integrations/status', adapt(integrationStatusHandler));
-app.post('/api/integrations/quickbooks/auth-url', adapt(qbAuthUrlHandler));
+// Health Check
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', server: 'up', timestamp: new Date().toISOString() });
+});
+
 app.get('/api/integrations/quickbooks/callback', adapt(qbCallbackHandler));
 // Debug Environment
 // Debug Environment - Removed for production
