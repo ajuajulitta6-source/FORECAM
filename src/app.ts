@@ -122,6 +122,28 @@ app.get('/api/reports/kpi', adapt(kpiHandler));
 app.get('/api/integrations/status', adapt(integrationStatusHandler));
 app.post('/api/integrations/quickbooks/auth-url', adapt(qbAuthUrlHandler));
 app.get('/api/integrations/quickbooks/callback', adapt(qbCallbackHandler));
-app.post('/api/integrations/quickbooks/sync-invoice', adapt(qbSyncInvoiceHandler));
+// Debug Environment
+app.get('/api/debug-env', (req, res) => {
+    res.json({
+        status: 'ok',
+        env: {
+            SUPABASE_URL_SET: !!process.env.SUPABASE_URL,
+            SUPABASE_SERVICE_ROLE_KEY_SET: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+            SUPABASE_ANON_KEY_SET: !!process.env.SUPABASE_ANON_KEY
+        }
+    });
+});
+
+// 404 Handler - Ensure JSON response for API routes
+app.use('/api/*', (req, res) => {
+    res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
+});
+
+// Global Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Unhandled App Error:', err);
+    res.status(500).json({ error: 'Internal Server Error', message: err.message });
+});
+
 
 export default app;
